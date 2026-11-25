@@ -1,0 +1,39 @@
+{
+  "_comment": "FIXTURE: saved static-scan output for the stand-in demo app, used when no live scanner is available. Route attribution (properties.route) comes from the app's route manifest. The duplicate SQLi result is intentional (exercises dedupe).",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "semgrep-fixture",
+          "semanticVersion": "fixture-1",
+          "rules": [
+            {"id": "python.flask.security.injection.tainted-sql-string",
+             "properties": {"tags": ["CWE-89: SQL Injection"], "security-severity": "7.5"}},
+            {"id": "python.flask.security.injection.path-traversal-open",
+             "properties": {"tags": ["CWE-22: Path Traversal"], "security-severity": "7.5"}},
+            {"id": "python.lang.security.audit.weak-hash",
+             "properties": {"tags": ["CWE-327"], "security-severity": "3.0"}}
+          ]
+        }
+      },
+      "results": [
+        {"ruleId": "python.flask.security.injection.tainted-sql-string", "level": "error",
+         "message": {"text": "User input flows into a SQL string built by concatenation."},
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "security/stand_in_app/app.py"}, "region": {"startLine": 120}}}],
+         "properties": {"route": "/search", "component": "search_v1"}},
+        {"ruleId": "python.flask.security.injection.tainted-sql-string", "level": "error",
+         "message": {"text": "User input flows into a SQL string built by concatenation."},
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "security/stand_in_app/app.py"}, "region": {"startLine": 120}}}],
+         "properties": {"route": "/search", "component": "search_v1"}},
+        {"ruleId": "python.flask.security.injection.path-traversal-open", "level": "error",
+         "message": {"text": "User-controlled path passed to open() without normalization."},
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "security/stand_in_app/app.py"}, "region": {"startLine": 166}}}],
+         "properties": {"route": "/files", "component": "files_v1"}},
+        {"ruleId": "python.lang.security.audit.weak-hash", "level": "note",
+         "message": {"text": "Weak hash function used."},
+         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "security/stand_in_app/legacy_util.py"}, "region": {"startLine": 4}}}]}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+--- a/app.py
++++ b/app.py
+@@ -161,8 +161,10 @@
+ 
+ 
+ def files_v1(name: str):
+-    # DELIBERATELY VULNERABLE (demo only): no normalization or root check.
+-    path = os.path.join(DOC_ROOT, name)
++    root = os.path.realpath(DOC_ROOT)
++    path = os.path.realpath(os.path.join(root, name))
++    if not name or os.path.commonpath([root, path]) != root or not os.path.isfile(path):
++        raise ValueError("path outside document root")
+     with open(path, encoding="utf-8") as f:
+         return f.read()
+ 

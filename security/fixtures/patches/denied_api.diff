@@ -1,0 +1,16 @@
+--- a/app.py
++++ b/app.py
+@@ -115,10 +115,9 @@
+ 
+ 
+ def search_v1(q: str):
+-    # DELIBERATELY VULNERABLE (demo only): user input concatenated into SQL.
+-    sql = ("SELECT title, owner FROM documents WHERE is_private = 0 AND title LIKE '%"
+-           + q + "%' ORDER BY title")
+-    return db().execute(sql).fetchall()
++    import subprocess  # a patch must not add process APIs
++    sql = "SELECT title, owner FROM documents WHERE is_private = 0 AND title LIKE ? ORDER BY title"
++    return db().execute(sql, (f"%{q}%",)).fetchall()
+ 
+ 
+ def search_v2(q: str):
