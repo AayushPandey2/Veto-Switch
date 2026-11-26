@@ -1,18 +1,37 @@
-"""Killswitch X — Remediation and Recovery Intelligence package boundary.
+"""Killswitch X — Remediation and Recovery Intelligence package boundary."""
 
-Owned by AI/ML Engineer 2 (Remediation and Recovery Intelligence).
+from remediation.patch_agent import EvidenceGroundedPatchEngineer
+from remediation.patching import (
+    PLATFORM_DEMO_TARGET,
+    REGISTERED_PATCH_TARGETS,
+    STAND_IN_TARGET,
+    PatchGenerationContext,
+    PatchGenerationOutcome,
+    PatchLimitsConfig,
+    PatchTargetDescriptor,
+    SourceSnapshot,
+    build_patch_context,
+    compute_candidate_hash,
+    load_snapshot_from_files,
+    parse_unified_diff,
+    serialize_patch_dashboard,
+    validate_patch_proposal,
+)
 
-In Phase 01, this package establishes the importable ownership boundary only.
-Candidate patch generation, isolated patch test orchestration, progressive rollout
-planning, release health evaluation, rollback recommendations, and evidence report
-aggregation are intentionally deferred to subsequent implementation phases.
-
-Security boundary:
-    Modules in ``remediation`` MUST NOT execute arbitrary shell commands, MUST NOT
-    mutate feature flags directly, and MUST preserve explicit provenance distinctions
-    between observed production telemetry, synthetic telemetry, and AI proposals.
-"""
-
-from __future__ import annotations
-
-__all__: list[str] = []
+__all__ = [
+    "PLATFORM_DEMO_TARGET",
+    "REGISTERED_PATCH_TARGETS",
+    "STAND_IN_TARGET",
+    "EvidenceGroundedPatchEngineer",
+    "PatchGenerationContext",
+    "PatchGenerationOutcome",
+    "PatchLimitsConfig",
+    "PatchTargetDescriptor",
+    "SourceSnapshot",
+    "build_patch_context",
+    "compute_candidate_hash",
+    "load_snapshot_from_files",
+    "parse_unified_diff",
+    "serialize_patch_dashboard",
+    "validate_patch_proposal",
+]

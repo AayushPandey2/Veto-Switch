@@ -1,11 +1,11 @@
 # Killswitch X — Implementation Status
 
-**Current Phase:** Prompt 05 / 12 — Blast Radius Intelligence, Dependency Graph Reasoning, Counterfactual Impact Analysis, Deterministic Containment Strategy Ranking and Human-Approval-Ready Proposals.
+**Current Phase:** Prompt 07 / 12 — Evidence-Grounded AI Patch Engineer (`remediation/`). Note: Phase 06 (`flag_auditor.py`) is not yet implemented in this workspace.
 
 > [!NOTE]
-> Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–05 and could not be inspected.
+> Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–07 and could not be inspected.
 
-## Phase 01–05 Inventory
+## Phase 01–05 & 07 Inventory
 
 ### Implemented & Verified
 - **Phase 01 Foundation:** Repository scaffolding, `.gitignore`, `.env.example`, `pyproject.toml`, `requirements.txt`, `.github/workflows/ci.yml`, `shared/` contracts/schemas/enums/exceptions/logging/config, `config/*.json`, `shared/fixtures/*.json`, and `tests/`.
@@ -21,8 +21,10 @@
 - **Phase 05 Blast Radius Intelligence & Containment Strategist (`agent_core/blast_radius.py`, `agent_core/graph_intelligence/`, `agent_core/containment_strategist.py`, `agent_core/containment/`):**
   - Directed multigraph index (`O(V + E)` bounded BFS), integrity validation, relationship-specific exposure vs disruption analysis, non-mutating counterfactual simulation, and dashboard graph serializer (`docs/blast_radius_intelligence.md`).
   - `DeterministicContainmentStrategist` (`ContainmentStrategistAgent`), versioned `config/containment_policy.json`, hard feasibility gates, replacement safety checks, deterministic weighted scoring & sensitivity analysis, hardened `v2` `ContainmentProposal` hashing, `IncidentOrchestrator.execute_containment_analysis` stopping at `AWAITING_APPROVAL`, offline demos (`agent_core.demos.blast_radius_demos`), and 7-case evaluator (`agent_core.evaluations.blast_radius_evaluator`).
+- **Phase 07 AI Patch Engineer (`remediation/patch_agent.py`, `remediation/patching/`, `remediation/prompts/`):**
+  - Target descriptors distinguishing `stand_in` vs `platform_demo_app`, bounded `SourceSnapshot` & AST localization, `LLMGateway` integration with bounded repair and revision-compatible `REFERENCE_FIXTURE` fallback, strict unified diff parsing & in-memory applicability, AST static safety & minimality metrics, `ArtifactType.PATCH_DIFF` persistence, `ReviewerChecklist` + PR-ready Markdown summary, `IncidentOrchestrator.execute_patch_generation`, offline demos (`remediation.demos`), and 5-case evaluator (`remediation.evaluations.patch_evaluator`, `docs/patch_engineer.md`).
 
-### Intentionally Deferred to Phases 06–12
+### Intentionally Deferred to Phase 06 & Phases 08–12
 
 | Subsystem | Deferred Modules | Planned Owner |
 | :--- | :--- | :--- |

@@ -29,6 +29,7 @@ from shared.exceptions import (
     InvalidTransitionError,
     LLMProviderError,
     LLMResponseValidationError,
+    PatchValidationError,
     UnauthorizedOperationError,
     UnknownFeatureError,
 )
@@ -43,7 +44,9 @@ from shared.schemas import (
     IncidentEvent,
     InvestigationSummary,
     MappingResult,
+    PatchProposal,
     RouteFlagRegistry,
+    VerificationResult,
 )
 from shared.serialization import canonical_json, sha256_text
 
@@ -87,6 +90,7 @@ from agent_core.policies import (
     validate_containment_proposal_output,
     validate_investigation_output,
     validate_mapping_output,
+    validate_patch_proposal_output,
 )
 from agent_core.replay import replay_incident as replay_from_events
 from agent_core.repositories.memory import InMemoryOrchestrationRepository
@@ -1107,6 +1111,154 @@ class IncidentOrchestrator:
             appr_req_event, producer_context=ai_producer, transition_context=tctx
         )
         return analysis, appr_req_res
+
+    async def execute_patch_generation(
+        self,
+        *,
+        finding: Finding,
+        containment_verification: VerificationResult,
+        producer_context: ProducerContext,
+        patch_context: Any | None = None,
+    ) -> tuple[PatchProposal | None, EventProcessingResult]:
+        """Run PatchEngineerAgent from CONTAINED -> PATCH_PENDING -> PATCH_PROPOSED.
+
+        Persists the candidate diff artifact in ``EvidenceRepository`` before
+        emitting ``PATCH_PROPOSED`` and remains in ``PATCH_PENDING`` until Phase 08
+        isolated verification completes.
+        """
+        if self._patch_engineer is None:
+            raise ConfigurationError("No PatchEngineerAgent is configured on IncidentOrchestrator.")
+        incident = await self._repo.get_incident(finding.incident_id)
+        if incident is None:
+            raise ContractValidationError(
+                f"Cannot generate patch for unknown incident {finding.incident_id!r}."
+            )
+        if finding.status != FindingStatus.REPRODUCED:
+            raise ContractValidationError(
+                "Suspected findings cannot enter operational patch generation.",
+                context={"finding_id": finding.finding_id, "status": finding.status.value},
+            )
+
+        now = self._clock.now()
+        next_seq = incident.latest_event_sequence + 1
+        req_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.PATCH_REQUESTED,
+            actor=producer_context.producer_id,
+            actor_type=producer_context.actor_type,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            timestamp_utc=now,
+            payload={"finding_id": finding.finding_id},
+        )
+        req_res = await self.process_event(req_event, producer_context=producer_context)
+        if not req_res.accepted:
+            raise InvalidTransitionError(
+                f"Patch request rejected by orchestrator: {req_res.reason_code}",
+                context={"incident_id": incident.incident_id, "reason_code": req_res.reason_code},
+            )
+        next_seq += 1
+
+        ai_producer = ProducerContext(
+            producer_id="remediation_patch_engineer",
+            actor_type=ActorType.AI_AGENT,
+            authenticated=producer_context.authenticated,
+            trusted_channel=producer_context.trusted_channel,
+            provenance_mode=producer_context.provenance_mode,
+        )
+
+        proposal: PatchProposal | None = None
+        try:
+            if patch_context is not None and hasattr(self._patch_engineer, "generate_candidate"):
+                outcome = await self._patch_engineer.generate_candidate(patch_context)
+                if not outcome.accepted or outcome.proposal is None:
+                    raise ContractValidationError(
+                        "Patch generation rejected by deterministic policy.",
+                        context={"reasons": [r.value for r in outcome.rejection_reasons]},
+                    )
+                proposal = outcome.proposal
+            else:
+                proposal = await self._patch_engineer.propose_patch(
+                    finding, containment_verification
+                )
+            proposal = validate_patch_proposal_output(
+                proposal,
+                finding=finding,
+                expected_revision=incident.source_revision,
+            )
+        except (ContractValidationError, PatchValidationError, ConfigurationError) as exc:
+            fail_event = build_incident_event(
+                incident_id=incident.incident_id,
+                event_type=EventType.PATCH_VALIDATION_FAILED,
+                actor="remediation_patch_engineer",
+                actor_type=ActorType.AI_AGENT,
+                sequence_number=next_seq,
+                correlation_id=incident.correlation_id,
+                timestamp_utc=self._clock.now(),
+                payload={
+                    "finding_id": finding.finding_id,
+                    "error_code": getattr(exc, "error_code", "PATCH_VALIDATION_FAILED"),
+                },
+            )
+            fail_res = await self.process_event(fail_event, producer_context=ai_producer)
+            return None, fail_res
+
+        if self._evidence_repo is not None:
+            existing_ref = await self._evidence_repo.get_artifact_reference(
+                proposal.candidate_artifact_id
+            )
+            if existing_ref is None:
+                art_ref = ArtifactReference(
+                    artifact_id=proposal.candidate_artifact_id,
+                    incident_id=incident.incident_id,
+                    artifact_type=ArtifactType.PATCH_DIFF,
+                    content_hash=proposal.candidate_content_hash,
+                    storage_ref=f"patches/{incident.incident_id}/{proposal.patch_id}.diff",
+                    created_at=self._clock.now(),
+                    producer="remediation_patch_engineer",
+                    provenance=(
+                        EvidenceProvenance.REFERENCE_FIXTURE
+                        if self._fixture_mode
+                        else EvidenceProvenance.LLM_INTERPRETATION
+                    ),
+                    content_type="text/x-diff",
+                    size_bytes=len(proposal.unified_diff.encode("utf-8")),
+                    source_revision=proposal.source_revision,
+                    redaction_status=RedactionStatus.REDACTED,
+                )
+                await self._evidence_repo.store_artifact(
+                    art_ref, proposal.unified_diff.encode("utf-8")
+                )
+
+        prop_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.PATCH_PROPOSED,
+            actor="remediation_patch_engineer",
+            actor_type=ActorType.AI_AGENT,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            evidence_ids=[proposal.candidate_artifact_id],
+            timestamp_utc=self._clock.now(),
+            payload={
+                "patch_id": proposal.patch_id,
+                "candidate_artifact_id": proposal.candidate_artifact_id,
+                "candidate_content_hash": proposal.candidate_content_hash,
+                "source_revision": proposal.source_revision,
+                "touched_files": list(proposal.touched_files),
+            },
+        )
+        tctx = TransitionContext(
+            producer_context=ai_producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            finding=finding,
+            patch_proposal=proposal,
+        )
+        prop_res = await self.process_event(
+            prop_event, producer_context=ai_producer, transition_context=tctx
+        )
+        return proposal, prop_res
 
 
 async def on_incident_event(

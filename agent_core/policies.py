@@ -8,7 +8,13 @@ identity, and evidence rules.
 
 from __future__ import annotations
 
-from shared.enums import EvidenceProvenance, FindingStatus, MappingStatus, ProposalType
+from shared.enums import (
+    EvidenceProvenance,
+    FindingStatus,
+    MappingStatus,
+    PatchStatus,
+    ProposalType,
+)
 from shared.exceptions import (
     AmbiguousMappingError,
     ContractValidationError,
@@ -19,8 +25,10 @@ from shared.schemas import (
     Finding,
     InvestigationSummary,
     MappingResult,
+    PatchProposal,
     RouteFlagRegistry,
 )
+from shared.serialization import sha256_bytes
 
 from agent_core.mapping.registry import IndexedRouteRegistry
 from agent_core.mapping.resolvers import compute_authoritative_candidates
@@ -238,5 +246,47 @@ def validate_containment_proposal_output(
         raise ContractValidationError(
             "ContainmentProposal flag_name differs from validated MappingResult flag.",
             context={"mapped": mapping.selected_flag, "proposed": proposal.flag_name},
+        )
+    return proposal
+
+
+def validate_patch_proposal_output(
+    proposal: PatchProposal,
+    *,
+    finding: Finding,
+    expected_revision: str | None = None,
+) -> PatchProposal:
+    """Validate an injected PatchEngineerAgent proposal against incident & hash invariants."""
+    if proposal.incident_id != finding.incident_id:
+        raise ContractValidationError(
+            "PatchProposal incident_id does not match Finding.",
+            context={"expected": finding.incident_id, "actual": proposal.incident_id},
+        )
+    if proposal.finding_id != finding.finding_id:
+        raise ContractValidationError(
+            "PatchProposal finding_id does not match Finding.",
+            context={"expected": finding.finding_id, "actual": proposal.finding_id},
+        )
+    if finding.status != FindingStatus.REPRODUCED:
+        raise ContractValidationError(
+            "PatchProposal requires a reproduced finding.",
+            context={"finding_status": finding.status.value},
+        )
+    if expected_revision and proposal.source_revision != expected_revision:
+        raise ContractValidationError(
+            "PatchProposal source_revision does not match expected revision.",
+            context={"expected": expected_revision, "actual": proposal.source_revision},
+        )
+    if proposal.status != PatchStatus.PATCH_PROPOSED:
+        raise ContractValidationError(
+            f"PatchProposal status must be 'patch_proposed', got {proposal.status.value!r}."
+        )
+    if not proposal.review_required:
+        raise ContractValidationError("PatchProposal must enforce review_required=True.")
+    expected_hash = sha256_bytes(proposal.unified_diff.replace("\r\n", "\n").encode("utf-8"))
+    if proposal.candidate_content_hash != expected_hash:
+        raise ContractValidationError(
+            "PatchProposal candidate_content_hash does not match unified_diff bytes.",
+            context={"expected": expected_hash, "actual": proposal.candidate_content_hash},
         )
     return proposal

@@ -26,7 +26,7 @@ jobs:
         run: ruff check .
 
       - name: Run Mypy type checks
-        run: mypy shared agent_core
+        run: mypy shared agent_core remediation
 
       - name: Validate JSON configuration and fixtures
         run: python scripts/validate_fixtures.py
@@ -51,6 +51,12 @@ jobs:
 
       - name: Run offline Phase 05 blast radius evaluation check
         run: python -m agent_core.evaluations.blast_radius_evaluator
+
+      - name: Run offline Phase 07 patch engineer demonstrations
+        run: python -m remediation.demos
+
+      - name: Run offline Phase 07 patch engineer evaluation check
+        run: python -m remediation.evaluations.patch_evaluator
 
       - name: Run unit, contract, and orchestration tests (offline)
         run: pytest -v
