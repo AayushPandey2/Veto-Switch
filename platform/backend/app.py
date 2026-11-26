@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+from difflib import unified_diff
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -30,6 +31,10 @@ from backend.flagsmith_client import (
 SCENARIOS = {
     "search_sqli": {"safe_flag": "search_v2", "vulnerable_flag": "search_v1"},
     "path_traversal": {"safe_flag": "files_v2", "vulnerable_flag": "files_v1"},
+}
+PATCH_SOURCE_FILES = {
+    "search_sqli": ("vulnerable_search_service.py", "search_service.py"),
+    "path_traversal": ("vulnerable_file_service.py", "file_service.py"),
 }
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -110,6 +115,45 @@ def _ensure_unexpired(proposal: dict) -> None:
             status_code=409,
             detail={"code": "proposal_expired", "message": "Create a fresh proposal."},
         )
+
+
+def _read_demo_patch(scenario: str) -> dict[str, str]:
+    """Build a read-only diff from the demo's vulnerable and safe examples."""
+    filenames = PATCH_SOURCE_FILES.get(scenario)
+    if filenames is None:
+        raise HTTPException(status_code=422, detail={"code": "patch_scenario_unsupported"})
+
+    demo_app_dir = Path(__file__).resolve().parents[1] / "demo_app"
+    vulnerable_name, safe_name = filenames
+    try:
+        vulnerable_lines = (demo_app_dir / vulnerable_name).read_text(
+            encoding="utf-8"
+        ).splitlines(keepends=True)
+        safe_lines = (demo_app_dir / safe_name).read_text(
+            encoding="utf-8"
+        ).splitlines(keepends=True)
+    except OSError:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "patch_sources_unavailable"},
+        ) from None
+
+    diff = "".join(
+        unified_diff(
+            vulnerable_lines,
+            safe_lines,
+            fromfile=f"a/platform/demo_app/{vulnerable_name}",
+            tofile=f"b/platform/demo_app/{safe_name}",
+            n=3,
+        )
+    )
+    if not diff:
+        raise HTTPException(status_code=503, detail={"code": "patch_diff_unavailable"})
+    return {
+        "before_file": f"platform/demo_app/{vulnerable_name}",
+        "after_file": f"platform/demo_app/{safe_name}",
+        "diff": diff,
+    }
 
 
 def create_app(
@@ -904,11 +948,15 @@ def create_app(
                 detail={"code": "containment_verification_required"},
             )
 
+        patch = _read_demo_patch(incident["scenario"])
         result = {
             "status": "candidate_available",
+            "incident_id": incident_id,
             "safe_variant": proposal["safe_flag"],
+            **patch,
             "already_present_in_demo_app": True,
             "applied": False,
+            "patch_test_status": "not_run",
             "note": "The safe demo variant exists in the app; no deployment was performed.",
         }
         _record_event(
@@ -916,7 +964,7 @@ def create_app(
             incident_id,
             "patch_candidate_reported",
             "local_patch_advisor",
-            result,
+            {key: value for key, value in result.items() if key != "diff"},
         )
         return result
 
