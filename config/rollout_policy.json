@@ -1,0 +1,27 @@
+{
+  "policy_version": "1.0.0",
+  "is_demo_default": true,
+  "units": {
+    "stages_percent": "integer percentage [0, 100]",
+    "max_error_rate": "dimensionless ratio [0.0, 1.0] (0.02 = 2%)",
+    "max_error_rate_increase_pp": "percentage points over baseline",
+    "max_p95_latency_increase_percent": "percentage increase over baseline p95 latency",
+    "minimum_request_count": "requests (integer >= 0)",
+    "minimum_observation_window_seconds": "seconds (integer >= 1)"
+  },
+  "stages_percent": [5, 25, 50, 100],
+  "require_security_verification": true,
+  "require_deployment_evidence": true,
+  "require_feature_state_readback": true,
+  "require_human_approval": true,
+  "rollback_manual_review_required": true,
+  "guardrails": {
+    "max_error_rate": 0.02,
+    "max_error_rate_increase_pp": 1.0,
+    "max_p95_latency_increase_percent": 20.0,
+    "missing_data_decision": "hold",
+    "is_demo_default": true
+  },
+  "minimum_request_count": 100,
+  "minimum_observation_window_seconds": 30
+}

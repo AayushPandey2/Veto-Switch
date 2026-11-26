@@ -1,0 +1,112 @@
+{
+  "_meta": {
+    "description": "Normalized security finding fixtures (valid and negative test cases).",
+    "provenance": "reference_fixture"
+  },
+  "valid": {
+    "reproduced_sqli": {
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "category": "sql_injection",
+      "affected_route": "/search",
+      "affected_component": "search_service",
+      "severity": "critical",
+      "status": "reproduced",
+      "evidence_ids": ["art_00000000000000000000000000000001"],
+      "source_scanner": "killswitch_demo_verifier",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": [],
+      "observed_impact": "Boolean-based SQL injection reproduced on GET /search?q= query parameter.",
+      "detected_at": "2026-11-26T00:00:00Z",
+      "provenance": "reference_fixture"
+    },
+    "suspected_sqli": {
+      "finding_id": "fnd_00000000000000000000000000000002",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "category": "sql_injection",
+      "affected_route": "/search",
+      "affected_component": "search_service",
+      "severity": "high",
+      "status": "suspected",
+      "evidence_ids": [],
+      "source_scanner": "static_dast_stub",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": [],
+      "observed_impact": "Suspected unparameterized query reported prior to reproduction.",
+      "detected_at": "2026-11-26T00:00:00Z",
+      "provenance": "reference_fixture"
+    },
+    "reproduced_path_traversal": {
+      "finding_id": "fnd_00000000000000000000000000000003",
+      "incident_id": "inc_00000000000000000000000000000002",
+      "category": "path_traversal",
+      "affected_route": "/files",
+      "affected_component": "file_service",
+      "severity": "high",
+      "status": "reproduced",
+      "evidence_ids": ["art_00000000000000000000000000000002"],
+      "source_scanner": "killswitch_demo_verifier",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": [],
+      "observed_impact": "Relative path traversal permitted read outside demo_uploads root.",
+      "detected_at": "2026-11-26T00:01:00Z",
+      "provenance": "reference_fixture"
+    },
+    "suspected_dependency_cve": {
+      "finding_id": "fnd_00000000000000000000000000000004",
+      "incident_id": "inc_00000000000000000000000000000003",
+      "category": "dependency_cve",
+      "affected_route": null,
+      "affected_component": "urllib3_legacy_adapter",
+      "severity": "medium",
+      "status": "suspected",
+      "evidence_ids": [],
+      "source_scanner": "dependency_audit_fixture",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": ["CVE-2025-00001"],
+      "observed_impact": "Suspected vulnerable transitive dependency awaiting reachability check.",
+      "detected_at": "2026-11-26T00:02:00Z",
+      "provenance": "reference_fixture"
+    },
+    "unknown_affected_route": {
+      "finding_id": "fnd_00000000000000000000000000000005",
+      "incident_id": "inc_00000000000000000000000000000003",
+      "category": "other",
+      "affected_route": null,
+      "affected_component": "background_worker",
+      "severity": "unknown",
+      "status": "suspected",
+      "evidence_ids": [],
+      "source_scanner": "manual_report",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": [],
+      "observed_impact": null,
+      "detected_at": "2026-11-26T00:03:00Z",
+      "provenance": "reference_fixture"
+    }
+  },
+  "invalid": {
+    "missing_reproduction_evidence": {
+      "finding_id": "fnd_00000000000000000000000000000099",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "category": "sql_injection",
+      "affected_route": "/search",
+      "affected_component": "search_service",
+      "severity": "critical",
+      "status": "reproduced",
+      "evidence_ids": [],
+      "source_scanner": "killswitch_demo_verifier",
+      "repository_revision": "rev_abc123def456",
+      "environment": "demo-staging",
+      "cve_ids": [],
+      "observed_impact": "Invalid: reproduced finding claims no evidence_ids.",
+      "detected_at": "2026-11-26T00:04:00Z",
+      "provenance": "reference_fixture"
+    }
+  }
+}

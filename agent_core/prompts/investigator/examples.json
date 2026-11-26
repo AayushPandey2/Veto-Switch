@@ -1,0 +1,90 @@
+{
+  "examples_origin": "synthetic_illustrative_examples",
+  "examples": [
+    {
+      "example_id": "ex_sqli_reproduced_01",
+      "category": "sql_injection",
+      "status": "reproduced",
+      "output": {
+        "executive_summary": "Verified SQL injection finding on search_service (/search).",
+        "technical_explanation": "Supplied reproduction log confirms boolean SQL behavior; bounded excerpt shows unparameterized query formatting.",
+        "affected_components": ["search_service"],
+        "observed_effects": ["Unexpected multi-row query response during authorized verification."],
+        "grounded_facts": [
+          {
+            "claim_id": "clm_ex_01",
+            "statement": "Authorized baseline reproduction test confirmed SQL injection on /search.",
+            "classification": "observed",
+            "evidence_ids": ["art_repro_0001"],
+            "source_excerpt_ids": [],
+            "environment": "staging",
+            "source_revision": "rev_abc1234",
+            "limitations": []
+          }
+        ],
+        "technical_interpretations": [
+          {
+            "claim_id": "clm_ex_02",
+            "statement": "String interpolation in search_query() is consistent with the reproduced injection.",
+            "classification": "inferred",
+            "evidence_ids": ["art_repro_0001", "art_src_0001"],
+            "source_excerpt_ids": ["src_01"],
+            "environment": "staging",
+            "source_revision": "rev_abc1234",
+            "limitations": ["Other repository query paths were not inspected."]
+          }
+        ],
+        "potential_impacts": [
+          {
+            "description": "Unauthorized database record read may be possible if endpoint remains enabled.",
+            "verified": false,
+            "limitations": ["Full database privilege scope was not exercised."]
+          }
+        ],
+        "assumptions": [],
+        "uncertainties": ["Other database query builders in search_service were not inspected."],
+        "missing_evidence": [],
+        "recommended_next_action": "request_feature_mapping",
+        "evidence_ids": ["art_repro_0001", "art_src_0001"],
+        "model_reported_confidence": "high_evidence_support"
+      }
+    },
+    {
+      "example_id": "ex_cve_suspected_01",
+      "category": "dependency_cve",
+      "status": "suspected",
+      "output": {
+        "executive_summary": "Suspected dependency CVE match for template-engine package; exploitability unverified.",
+        "technical_explanation": "Advisory metadata matches installed package version, but no runtime reproduction or call-path proof exists.",
+        "affected_components": ["pdf_renderer"],
+        "observed_effects": [],
+        "grounded_facts": [
+          {
+            "claim_id": "clm_ex_03",
+            "statement": "Dependency manifest records installed version matching supplied advisory range.",
+            "classification": "observed",
+            "evidence_ids": ["art_cve_0001"],
+            "source_excerpt_ids": [],
+            "environment": "staging",
+            "source_revision": "rev_abc1234",
+            "limitations": []
+          }
+        ],
+        "technical_interpretations": [],
+        "potential_impacts": [
+          {
+            "description": "Potential vulnerability exposure if the affected library API is reachable at runtime.",
+            "verified": false,
+            "limitations": ["Runtime reachability and exploitability have not been verified."]
+          }
+        ],
+        "assumptions": ["Installed manifest accurately reflects runtime container packages."],
+        "uncertainties": ["Call-path reachability into vulnerable function is unknown."],
+        "missing_evidence": ["confirmed_reproduction_verification", "reachability_evidence"],
+        "recommended_next_action": "request_verification",
+        "evidence_ids": ["art_cve_0001"],
+        "model_reported_confidence": "limited_evidence_support"
+      }
+    }
+  ]
+}

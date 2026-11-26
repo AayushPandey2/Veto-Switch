@@ -1,0 +1,62 @@
+{
+  "registry_version": "1.0.0-demo",
+  "environment": "demo-staging",
+  "declared_features": [
+    "search_v1",
+    "search_v2",
+    "files_v1"
+  ],
+  "safe_fallback": {
+    "route": "/health",
+    "status_code": 200,
+    "behavior": "Static health and maintenance response when vulnerable routes are contained."
+  },
+  "provenance": "reference_fixture",
+  "is_fixture_assumption": true,
+  "routes": [
+    {
+      "route": "/search",
+      "component": "search_service",
+      "flags": ["search_v1", "search_v2"],
+      "fallback_route": "/health",
+      "coverage_status": "protected",
+      "deployment_assumptions": [
+        "Fixture assumption: search_v1 serves legacy SQL query path; search_v2 represents parameterized replacement path if deployed."
+      ],
+      "is_fixture_assumption": true
+    },
+    {
+      "route": "/files",
+      "component": "file_service",
+      "flags": ["files_v1"],
+      "fallback_route": "/health",
+      "coverage_status": "protected",
+      "deployment_assumptions": [
+        "Fixture assumption: disabling files_v1 blocks file retrieval endpoint at router middleware."
+      ],
+      "is_fixture_assumption": true
+    },
+    {
+      "route": "/legacy-export",
+      "component": "legacy_export_service",
+      "flags": [],
+      "fallback_route": null,
+      "coverage_status": "unprotected",
+      "deployment_assumptions": [
+        "Deliberately unprotected demonstration route illustrating coverage audit detection."
+      ],
+      "is_fixture_assumption": true
+    },
+    {
+      "route": "/health",
+      "component": "healthcheck_service",
+      "flags": [],
+      "fallback_route": null,
+      "coverage_status": "unprotected",
+      "deployment_assumptions": [
+        "Safe read-only fallback route intentionally kept ungated for availability checks."
+      ],
+      "is_fixture_assumption": true
+    }
+  ]
+}

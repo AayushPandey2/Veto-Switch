@@ -1,0 +1,106 @@
+{
+  "_meta": {
+    "description": "Feature-flag mapping and feature-state fixtures covering valid and failure modes.",
+    "provenance": "reference_fixture"
+  },
+  "valid": {
+    "exact_match": {
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "mapping_status": "matched",
+      "affected_route": "/search",
+      "matched_component": "search_service",
+      "candidate_flags": ["search_v1"],
+      "selected_flag": "search_v1",
+      "registry_version": "1.0.0-demo",
+      "mapping_rationale": "Route /search maps directly to search_service guarded by active flag search_v1.",
+      "evidence_ids": ["art_00000000000000000000000000000001"],
+      "manual_review_required": false
+    },
+    "ambiguous_match": {
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "mapping_status": "ambiguous",
+      "affected_route": "/search",
+      "matched_component": "search_service",
+      "candidate_flags": ["search_v1", "search_v2"],
+      "selected_flag": null,
+      "registry_version": "1.0.0-demo",
+      "mapping_rationale": "Multiple active candidate flags cover /search; human disambiguation required.",
+      "evidence_ids": ["art_00000000000000000000000000000001"],
+      "manual_review_required": true
+    },
+    "unknown_route": {
+      "finding_id": "fnd_00000000000000000000000000000005",
+      "mapping_status": "unmapped",
+      "affected_route": null,
+      "matched_component": "background_worker",
+      "candidate_flags": [],
+      "selected_flag": null,
+      "registry_version": "1.0.0-demo",
+      "mapping_rationale": "Finding has no known HTTP route in route_flag_map.json.",
+      "evidence_ids": [],
+      "manual_review_required": true
+    },
+    "missing_feature_state": {
+      "environment": "demo-staging",
+      "feature_id": "unknown_flag_id",
+      "feature_name": "nonexistent_flag",
+      "observation_status": "unavailable",
+      "enabled": null,
+      "observed_at": "2026-11-26T00:05:00Z",
+      "state_version": null,
+      "observation_source": "reference_fixture",
+      "segment_targeting": {},
+      "evidence_ids": []
+    },
+    "already_disabled_feature_state": {
+      "environment": "demo-staging",
+      "feature_id": "fs_search_v1",
+      "feature_name": "search_v1",
+      "observation_status": "observed",
+      "enabled": false,
+      "observed_at": "2026-11-26T00:05:30Z",
+      "state_version": "v42",
+      "observation_source": "reference_fixture",
+      "segment_targeting": {},
+      "evidence_ids": ["art_00000000000000000000000000000003"]
+    },
+    "stale_registry_mapping": {
+      "finding_id": "fnd_00000000000000000000000000000003",
+      "mapping_status": "unmapped",
+      "affected_route": "/files",
+      "matched_component": "file_service",
+      "candidate_flags": [],
+      "selected_flag": null,
+      "registry_version": "0.1.0-stale",
+      "mapping_rationale": "Registry version 0.1.0-stale precedes current deployment revision; manual review required.",
+      "evidence_ids": ["art_00000000000000000000000000000002"],
+      "manual_review_required": true
+    }
+  },
+  "invalid": {
+    "ambiguous_masquerading_as_selected": {
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "mapping_status": "ambiguous",
+      "affected_route": "/search",
+      "matched_component": "search_service",
+      "candidate_flags": ["search_v1", "search_v2"],
+      "selected_flag": "search_v1",
+      "registry_version": "1.0.0-demo",
+      "mapping_rationale": "Invalid: ambiguous mapping cannot pick selected_flag.",
+      "evidence_ids": ["art_00000000000000000000000000000001"],
+      "manual_review_required": false
+    },
+    "unavailable_feature_claiming_disabled": {
+      "environment": "demo-staging",
+      "feature_id": "fs_missing",
+      "feature_name": "search_v1",
+      "observation_status": "unavailable",
+      "enabled": false,
+      "observed_at": "2026-11-26T00:05:00Z",
+      "state_version": null,
+      "observation_source": "reference_fixture",
+      "segment_targeting": {},
+      "evidence_ids": []
+    }
+  }
+}

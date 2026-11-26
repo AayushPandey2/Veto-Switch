@@ -1,0 +1,44 @@
+name: Killswitch X Foundation CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  foundation-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project and development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Ruff linting
+        run: ruff check .
+
+      - name: Run Mypy type checks
+        run: mypy shared agent_core
+
+      - name: Validate JSON configuration and fixtures
+        run: python scripts/validate_fixtures.py
+
+      - name: Run offline synthetic simulations
+        run: python -m agent_core.simulations
+
+      - name: Run offline AI Investigator demonstrations
+        run: python -m agent_core.demos
+
+      - name: Run offline AI evaluation regression check
+        run: python -m agent_core.evaluations.regression
+
+      - name: Run unit, contract, and orchestration tests (offline)
+        run: pytest -v

@@ -1,0 +1,215 @@
+{
+  "_meta": {
+    "description": "Candidate patch proposal and isolated patch test result fixtures.",
+    "provenance": "reference_fixture"
+  },
+  "valid": {
+    "reference_candidate_patch": {
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "source_revision": "rev_abc123def456",
+      "candidate_artifact_id": "art_00000000000000000000000000000007",
+      "candidate_content_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "unified_diff": "--- a/app/search.py\n+++ b/app/search.py\n@@ -10,2 +10,2 @@\n-    cursor.execute(f\"SELECT * FROM items WHERE name LIKE %{q}%\")\n+    cursor.execute(\"SELECT * FROM items WHERE name LIKE ?\", (f\"%{q}%\",))\n",
+      "allowed_files": ["app/search.py", "tests/test_search.py"],
+      "touched_files": ["app/search.py"],
+      "technical_rationale": "Replace interpolated SQL string with parameterized bound query.",
+      "expected_behavior_changes": ["SQL metacharacters in search query are treated strictly as literal text."],
+      "required_tests": ["test_search_sql_injection_blocked", "test_search_functional_results"],
+      "potential_regressions": ["Empty query edge cases in search pagination."],
+      "assumptions": ["SQLite DBAPI '?' placeholder semantics apply to demonstration app."],
+      "patch_origin": "reference_fixture",
+      "status": "patch_proposed",
+      "model_metadata": null,
+      "review_required": true,
+      "created_at": "2026-11-26T00:15:00Z"
+    },
+    "valid_patch_test_result": {
+      "test_run_id": "trun_00000000000000000000000000000201",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_abc123def456",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [
+        {
+          "test_name": "test_search_sql_injection_blocked",
+          "category": "security",
+          "status": "test_passed",
+          "duration_seconds": 0.42,
+          "message": "SQL injection payload safely neutralized."
+        },
+        {
+          "test_name": "test_search_functional_results",
+          "category": "functional",
+          "status": "test_passed",
+          "duration_seconds": 0.31,
+          "message": "Normal keyword search returns expected items."
+        }
+      ],
+      "overall_status": "test_passed",
+      "artifact_ids": ["art_00000000000000000000000000000008"],
+      "sanitized_logs": "2 passed in 0.73s",
+      "started_at": "2026-11-26T00:16:00Z",
+      "completed_at": "2026-11-26T00:16:02Z",
+      "exit_code": 0,
+      "limitations": ["Fixture test run; real isolated runner deferred."],
+      "provenance": "reference_fixture"
+    },
+    "failed_functional_test_result": {
+      "test_run_id": "trun_00000000000000000000000000000202",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_abc123def456",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [
+        {
+          "test_name": "test_search_sql_injection_blocked",
+          "category": "security",
+          "status": "test_passed",
+          "duration_seconds": 0.4,
+          "message": "Security test passed."
+        },
+        {
+          "test_name": "test_search_functional_results",
+          "category": "functional",
+          "status": "test_failed",
+          "duration_seconds": 0.3,
+          "message": "Functional search pagination test failed."
+        }
+      ],
+      "overall_status": "test_failed",
+      "artifact_ids": ["art_00000000000000000000000000000009"],
+      "sanitized_logs": "1 passed, 1 failed",
+      "started_at": "2026-11-26T00:16:10Z",
+      "completed_at": "2026-11-26T00:16:12Z",
+      "exit_code": 1,
+      "limitations": ["Security pass cannot override functional regression failure."],
+      "provenance": "reference_fixture"
+    },
+    "failed_security_test_result": {
+      "test_run_id": "trun_00000000000000000000000000000203",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_abc123def456",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [
+        {
+          "test_name": "test_search_sql_injection_blocked",
+          "category": "security",
+          "status": "test_failed",
+          "duration_seconds": 0.45,
+          "message": "Secondary UNION injection vector still succeeded."
+        }
+      ],
+      "overall_status": "test_failed",
+      "artifact_ids": ["art_00000000000000000000000000000010"],
+      "sanitized_logs": "1 failed",
+      "started_at": "2026-11-26T00:16:20Z",
+      "completed_at": "2026-11-26T00:16:22Z",
+      "exit_code": 1,
+      "limitations": [],
+      "provenance": "reference_fixture"
+    },
+    "revision_mismatch_result": {
+      "test_run_id": "trun_00000000000000000000000000000204",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_stale_999999",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [
+        {
+          "test_name": "test_search_sql_injection_blocked",
+          "category": "security",
+          "status": "test_passed",
+          "duration_seconds": 0.4,
+          "message": "Passed against wrong base revision; result untrusted."
+        }
+      ],
+      "overall_status": "test_passed",
+      "artifact_ids": ["art_00000000000000000000000000000011"],
+      "sanitized_logs": "Revision mismatch detected.",
+      "started_at": "2026-11-26T00:16:30Z",
+      "completed_at": "2026-11-26T00:16:31Z",
+      "exit_code": 0,
+      "limitations": ["Untrusted because tested_source_revision != expected_source_revision."],
+      "provenance": "reference_fixture"
+    },
+    "infrastructure_timeout_result": {
+      "test_run_id": "trun_00000000000000000000000000000205",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_abc123def456",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [],
+      "overall_status": "infrastructure_error",
+      "artifact_ids": [],
+      "sanitized_logs": "Isolated test container timed out after 60s.",
+      "started_at": "2026-11-26T00:16:40Z",
+      "completed_at": "2026-11-26T00:17:40Z",
+      "exit_code": 124,
+      "limitations": ["Runner timed out; patch status remains unverified."],
+      "provenance": "reference_fixture"
+    }
+  },
+  "invalid": {
+    "path_outside_allowlist": {
+      "patch_id": "pat_00000000000000000000000000000199",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "finding_id": "fnd_00000000000000000000000000000001",
+      "source_revision": "rev_abc123def456",
+      "candidate_artifact_id": "art_00000000000000000000000000000007",
+      "candidate_content_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "unified_diff": "--- a/app/auth.py\n+++ b/app/auth.py\n",
+      "allowed_files": ["app/search.py"],
+      "touched_files": ["app/auth.py"],
+      "technical_rationale": "Invalid: modifies non-allowlisted file.",
+      "expected_behavior_changes": [],
+      "required_tests": ["test_search_sql_injection_blocked"],
+      "potential_regressions": [],
+      "assumptions": [],
+      "patch_origin": "llm_candidate",
+      "status": "patch_proposed",
+      "model_metadata": null,
+      "review_required": true,
+      "created_at": "2026-11-26T00:15:00Z"
+    },
+    "security_pass_overriding_functional_fail": {
+      "test_run_id": "trun_00000000000000000000000000000299",
+      "patch_id": "pat_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "expected_source_revision": "rev_abc123def456",
+      "tested_source_revision": "rev_abc123def456",
+      "tested_candidate_hash": "0e217d90d1e8684b801fe1c647573c9c6a6cfc65be16bdd24953d6db4c744931",
+      "individual_outcomes": [
+        {
+          "test_name": "test_search_sql_injection_blocked",
+          "category": "security",
+          "status": "test_passed",
+          "duration_seconds": 0.4,
+          "message": "Passed"
+        },
+        {
+          "test_name": "test_search_functional_results",
+          "category": "functional",
+          "status": "test_failed",
+          "duration_seconds": 0.3,
+          "message": "Failed"
+        }
+      ],
+      "overall_status": "test_passed",
+      "artifact_ids": [],
+      "sanitized_logs": "Invalid overall_status=test_passed despite failed functional test.",
+      "started_at": "2026-11-26T00:16:10Z",
+      "completed_at": "2026-11-26T00:16:12Z",
+      "exit_code": 0,
+      "limitations": [],
+      "provenance": "reference_fixture"
+    }
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "graph_version": "1.0.0-demo",
+  "environment": "demo-staging",
+  "provenance": "reference_fixture",
+  "is_fixture_assumption": true,
+  "description": "Illustrative demonstration dependency graph (fixture assumption, NOT an automatically discovered production graph). Edge direction: source_id -> target_id according to relationship.",
+  "nodes": [
+    {
+      "node_id": "app_demo",
+      "node_type": "application",
+      "label": "Killswitch Demo Flask App",
+      "metadata": {"fixture_assumption": true}
+    },
+    {
+      "node_id": "route_search",
+      "node_type": "route",
+      "label": "GET /search",
+      "metadata": {"path": "/search"}
+    },
+    {
+      "node_id": "svc_search",
+      "node_type": "service",
+      "label": "Search Service (search_v1 path)",
+      "metadata": {"component": "search_service"}
+    },
+    {
+      "node_id": "flag_search_v1",
+      "node_type": "feature_flag",
+      "label": "search_v1",
+      "metadata": {"flag_key": "search_v1"}
+    },
+    {
+      "node_id": "impl_search_v2",
+      "node_type": "replacement_implementation",
+      "label": "Parameterized Search Implementation (search_v2)",
+      "metadata": {"flag_key": "search_v2", "fixture_assumption": true}
+    },
+    {
+      "node_id": "route_files",
+      "node_type": "route",
+      "label": "GET /files",
+      "metadata": {"path": "/files"}
+    },
+    {
+      "node_id": "svc_files",
+      "node_type": "service",
+      "label": "File Service",
+      "metadata": {"component": "file_service"}
+    },
+    {
+      "node_id": "flag_files_v1",
+      "node_type": "feature_flag",
+      "label": "files_v1",
+      "metadata": {"flag_key": "files_v1"}
+    },
+    {
+      "node_id": "db_primary",
+      "node_type": "database",
+      "label": "Primary Application SQLite/Postgres DB",
+      "metadata": {"engine": "sqlite-demo"}
+    },
+    {
+      "node_id": "storage_files",
+      "node_type": "storage",
+      "label": "Local Artifact & Document Storage",
+      "metadata": {"root": "demo_uploads"}
+    },
+    {
+      "node_id": "svc_billing_unrelated",
+      "node_type": "service",
+      "label": "Unrelated Billing Summary Service",
+      "metadata": {"component": "billing_service", "blast_radius_isolation_example": true}
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "app_demo",
+      "target_id": "route_search",
+      "relationship": "calls",
+      "metadata": {"direction": "application dispatches HTTP route"}
+    },
+    {
+      "source_id": "route_search",
+      "target_id": "svc_search",
+      "relationship": "calls",
+      "metadata": {"direction": "route invokes search service"}
+    },
+    {
+      "source_id": "route_search",
+      "target_id": "flag_search_v1",
+      "relationship": "controlled_by",
+      "metadata": {"direction": "route execution gated by feature flag"}
+    },
+    {
+      "source_id": "svc_search",
+      "target_id": "db_primary",
+      "relationship": "accesses",
+      "metadata": {"direction": "search service queries primary database"}
+    },
+    {
+      "source_id": "svc_search",
+      "target_id": "impl_search_v2",
+      "relationship": "replaced_by",
+      "metadata": {"direction": "legacy search implementation has replacement candidate"}
+    },
+    {
+      "source_id": "app_demo",
+      "target_id": "route_files",
+      "relationship": "calls",
+      "metadata": {"direction": "application dispatches HTTP route"}
+    },
+    {
+      "source_id": "route_files",
+      "target_id": "svc_files",
+      "relationship": "calls",
+      "metadata": {"direction": "route invokes file service"}
+    },
+    {
+      "source_id": "route_files",
+      "target_id": "flag_files_v1",
+      "relationship": "controlled_by",
+      "metadata": {"direction": "route execution gated by feature flag"}
+    },
+    {
+      "source_id": "svc_files",
+      "target_id": "storage_files",
+      "relationship": "accesses",
+      "metadata": {"direction": "file service reads file storage"}
+    },
+    {
+      "source_id": "app_demo",
+      "target_id": "svc_billing_unrelated",
+      "relationship": "depends_on",
+      "metadata": {"direction": "unrelated application component isolated from search/files"}
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "description": "Human approval decision fixtures for valid, rejected, expired, mismatched hash, and duplicate cases.",
+    "provenance": "reference_fixture",
+    "evaluation_reference_time": "2026-11-26T00:15:00Z"
+  },
+  "valid": {
+    "valid_approval": {
+      "approval_id": "appr_00000000000000000000000000000101",
+      "proposal_id": "prop_00000000000000000000000000000101",
+      "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "actor_id": "secops_lead_demo",
+      "decision": "approved",
+      "decided_at": "2026-11-26T00:11:00Z",
+      "expires_at": "2026-11-26T00:25:00Z",
+      "rejection_reason": null,
+      "authorization_context_ref": "authctx_00000000000000000000000000000101",
+      "nonce": "nonce_00000000000000000000000000000101"
+    },
+    "rejected_approval": {
+      "approval_id": "appr_00000000000000000000000000000102",
+      "proposal_id": "prop_00000000000000000000000000000101",
+      "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "actor_id": "secops_lead_demo",
+      "decision": "rejected",
+      "decided_at": "2026-11-26T00:11:30Z",
+      "expires_at": "2026-11-26T00:25:00Z",
+      "rejection_reason": "Operator requested manual traffic verification before disabling search_v1.",
+      "authorization_context_ref": "authctx_00000000000000000000000000000102",
+      "nonce": "nonce_00000000000000000000000000000102"
+    }
+  },
+  "negative_cross_checks": {
+    "expired_approval": {
+      "approval_id": "appr_00000000000000000000000000000103",
+      "proposal_id": "prop_00000000000000000000000000000101",
+      "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "actor_id": "secops_lead_demo",
+      "decision": "approved",
+      "decided_at": "2026-11-26T00:11:00Z",
+      "expires_at": "2026-11-26T00:14:00Z",
+      "rejection_reason": null,
+      "authorization_context_ref": "authctx_00000000000000000000000000000103",
+      "nonce": "nonce_00000000000000000000000000000103"
+    },
+    "mismatched_proposal_hash": {
+      "approval_id": "appr_00000000000000000000000000000104",
+      "proposal_id": "prop_00000000000000000000000000000101",
+      "proposal_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "actor_id": "secops_lead_demo",
+      "decision": "approved",
+      "decided_at": "2026-11-26T00:11:00Z",
+      "expires_at": "2026-11-26T00:25:00Z",
+      "rejection_reason": null,
+      "authorization_context_ref": "authctx_00000000000000000000000000000104",
+      "nonce": "nonce_00000000000000000000000000000104"
+    },
+    "duplicate_approval_request": [
+      {
+        "approval_id": "appr_00000000000000000000000000000101",
+        "proposal_id": "prop_00000000000000000000000000000101",
+        "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "actor_id": "secops_lead_demo",
+        "decision": "approved",
+        "decided_at": "2026-11-26T00:11:00Z",
+        "expires_at": "2026-11-26T00:25:00Z",
+        "rejection_reason": null,
+        "authorization_context_ref": "authctx_00000000000000000000000000000101",
+        "nonce": "nonce_00000000000000000000000000000101"
+      },
+      {
+        "approval_id": "appr_00000000000000000000000000000101",
+        "proposal_id": "prop_00000000000000000000000000000101",
+        "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "actor_id": "secops_lead_demo",
+        "decision": "approved",
+        "decided_at": "2026-11-26T00:11:00Z",
+        "expires_at": "2026-11-26T00:25:00Z",
+        "rejection_reason": null,
+        "authorization_context_ref": "authctx_00000000000000000000000000000101",
+        "nonce": "nonce_00000000000000000000000000000101"
+      }
+    ]
+  }
+}
