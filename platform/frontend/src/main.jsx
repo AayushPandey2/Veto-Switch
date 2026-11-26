@@ -53,6 +53,7 @@ function App() {
   const [events, setEvents] = useState([]);
   const [coverage, setCoverage] = useState(null);
   const [verification, setVerification] = useState(null);
+  const [patchCandidate, setPatchCandidate] = useState(null);
   const [view, setView] = useState("incidents");
   const [rolloutStage, setRolloutStage] = useState(5);
   const [busy, setBusy] = useState(false);
@@ -217,6 +218,16 @@ function App() {
     "Verification passed. The safe route and unaffected status route were observed.",
   );
 
+  const viewPatch = async () => {
+    const result = await runAction(
+      `/incidents/${detail.id}/patch`,
+      "POST",
+      {},
+      "Patch option loaded below. It has not been deployed.",
+    );
+    if (result?.status === "candidate_available") setPatchCandidate(result);
+  };
+
   const stepState = (step) => {
     const status = detail?.status;
     if (!detail) return "upcoming";
@@ -312,11 +323,12 @@ function App() {
                           {selectedProposal?.status === "pending_approval" && <><button className="button button-danger" disabled={busy} onClick={() => approve("reject")}>Reject</button><button className="button button-primary" disabled={busy} onClick={() => approve("approve")}>Approve exact change <span>→</span></button></>}
                           {selectedProposal?.status === "approved" && <button className="button button-primary" disabled={busy} onClick={apply}>Apply approved change <span>→</span></button>}
                           {["applied", "verification_pending", "verification_failed", "verification_unavailable"].includes(detail.status) && <button className="button button-primary" disabled={busy} onClick={verify}>Run verification <span>→</span></button>}
-                          {detail.status === "verified" && <><button className="button button-quiet" disabled={busy} onClick={() => runAction(`/incidents/${detail.id}/patch`, "POST", {}, "Safe variant is available in the demo app; no deployment was made.")}>View patch option</button><label className="rollout-select"><span>STAGE</span><select value={rolloutStage} onChange={(event) => setRolloutStage(Number(event.target.value))}><option value={5}>5%</option><option value={25}>25%</option><option value={50}>50%</option><option value={100}>100%</option></select></label><button className="button button-quiet" disabled={busy} onClick={() => runAction(`/incidents/${detail.id}/rollout`, "POST", { percentage: rolloutStage }, "Rollout status updated.")}>Preview stage</button></>}
+                          {detail.status === "verified" && <><button className="button button-quiet" disabled={busy} onClick={viewPatch}>View patch option</button><label className="rollout-select"><span>STAGE</span><select value={rolloutStage} onChange={(event) => setRolloutStage(Number(event.target.value))}><option value={5}>5%</option><option value={25}>25%</option><option value={50}>50%</option><option value={100}>100%</option></select></label><button className="button button-quiet" disabled={busy} onClick={() => runAction(`/incidents/${detail.id}/rollout`, "POST", { percentage: rolloutStage }, "Rollout status updated.")}>Preview stage</button></>}
                         </div>
                       {detail.status === "verified" && <p className="rollout-note">Stage control is preview-only. It does not change Flagsmith targeting.</p>}
                       {verification && <div className={`verification-card ${verification.status === "verified" ? "verification-good" : "verification-bad"}`}><div className="verification-head"><span>{verification.status === "verified" ? "✓" : "!"}</span><div><b>Post-change verification: {humanize(verification.status)}</b><small>{formatTime(verification.observed_at)}</small></div></div>{verification.checks && <div className="check-list">{Object.entries(verification.checks).map(([name, passed]) => <div key={name}><span className={passed ? "check-pass" : "check-fail"}>{passed ? "✓" : "×"}</span>{humanize(name)}</div>)}</div>}</div>}
                       {detail.operation_receipt && <div className="receipt-card"><div className="receipt-title"><div><span className="section-kicker">CHANGE RECEIPT</span><b>{humanize(detail.operation_receipt.adapter)}</b></div><StatusPill value={detail.operation_receipt.readback_verified ? "readback_verified" : "apply_failed"} /></div><div className="receipt-states">{Object.keys(detail.operation_receipt.after || {}).map((flag) => <div key={flag}><code>{flag}</code><span>{humanize(detail.operation_receipt.before?.[flag] || "unknown")} <i>→</i> <b>{humanize(detail.operation_receipt.after[flag])}</b></span></div>)}</div><small>Actor: {detail.decision?.actor || "unknown"} · {formatTime(detail.operation_receipt.executed_at)}</small></div>}
+                      {patchCandidate?.incident_id === detail.id && <div className="patch-preview"><div className="patch-preview-heading"><div><span className="section-kicker">PATCH OPTION</span><b>{humanize(patchCandidate.safe_variant)} safe variant</b></div><StatusPill value="not_deployed" /></div><p>{patchCandidate.note}</p><div className="patch-file-pair"><code>{patchCandidate.before_file}</code><span>→</span><code>{patchCandidate.after_file}</code></div><div className="patch-test-status"><span>PATCH TEST</span><b>Not run</b></div><pre aria-label="Code difference">{patchCandidate.diff}</pre></div>}
                       </div>
                       <button className="export-button" onClick={exportReport}>⇩ Export evidence report <span>JSON</span></button>
                     </div>
