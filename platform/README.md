@@ -1,19 +1,21 @@
-# Standalone Platform Demo
+# Veto-Switch Platform Demo
 
-A local Flask app for demonstrating safe and intentionally vulnerable search and file routes. It uses synthetic SQLite records and a fixed in-memory file set. Vulnerable routes are disabled by default and the app binds only to `127.0.0.1`.
+This repository includes a local Flask demo app, a FastAPI operator service, and a React containment dashboard. The demo uses synthetic SQLite records and a fixed in-memory file set. Docker Compose publishes its services only on `127.0.0.1`; vulnerable routes are disabled unless both demo safety switches are enabled.
 
 Requires Python 3.11 or newer.
 
 ## Start both services with Docker Compose
 
-From the repository root, copy `.env.example` to `.env` once, then run:
+From the repository root, create `.env` from the example only if you do not already have one, then run:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build
 ```
 
-The Flask demo is at `http://127.0.0.1:5000`; the operator API and its interactive guide are at `http://127.0.0.1:8000/docs`. Both ports are bound to the local machine only. The database is kept in a Docker volume. To show an intentionally vulnerable synthetic example, edit `.env` and set `KILLSWITCH_DEMO_MODE=true`, `KILLSWITCH_ALLOW_VULNERABLE_ROUTES=true`, and the scenario's `KILLSWITCH_FLAG_*_V1=true` value. Keep the app on the local-only Compose setup.
+The dashboard is at `http://127.0.0.1:3000`, the Flask demo is at `http://127.0.0.1:5000`, and the operator API guide is at `http://127.0.0.1:8000/docs`. The backend persists incidents, decisions, operation receipts, and timeline events in a Docker volume, so they survive page refreshes and container restarts. Keep this demo on the local-only Compose setup.
+
+To demonstrate an intentionally vulnerable synthetic example, edit `.env` and set `KILLSWITCH_DEMO_MODE=true`, `KILLSWITCH_ALLOW_VULNERABLE_ROUTES=true`, and the relevant `KILLSWITCH_FLAG_*_V1=true` value. These switches permit only the isolated synthetic demo route; they do not make it suitable for public hosting.
 
 ## Start on Windows PowerShell
 
@@ -68,7 +70,15 @@ Open `http://127.0.0.1:8000/docs`. Use the `X-Operator-Passphrase` header on wri
 
 The local SQLite mode is available without Flagsmith credentials. The real Flagsmith mode requires a working account, the four configured flags, network access and a token with permission to update that environment. If the real service cannot be reached or a flag is missing/ambiguous, the API reports an error and does not claim containment.
 
-The React dashboard, Docker Compose, staged targeting/rollout, patch/recovery screens and production authentication remain outstanding roadmap work.
+## What works now and what still needs setup
+
+- The local dashboard flow supports creating and analyzing synthetic findings, recording an approval or rejection, applying an approved local flag change, verifying the running demo app, viewing the persisted timeline, and exporting a JSON report.
+- The local SQLite flag adapter is configured by default. The local approval and verification flow has been run successfully with Docker Compose.
+- A Flagsmith management adapter and server-side evaluation path are present, but real Flagsmith changes have **not** been verified. The private `.env` currently needs a dedicated Flagsmith environment key and management token before that path can be used. Never paste those credentials into chat or commit them.
+- The stage selector is a preview only: staged percentage targeting is not applied to Flagsmith. The patch action records an advisory event; it does not display a real code diff, run a patch test, or deploy code. Rollback execution is not implemented.
+- Production authentication, real cohort telemetry, and the remaining recovery and advisory screens are still future work.
+
+The UI shows the local adapter and labels the environment as local. Treat a green verification result as evidence from the local synthetic demo only, not as proof of a real Flagsmith deployment.
 
 ## Run the demo checks
 
