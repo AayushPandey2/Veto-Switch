@@ -290,3 +290,52 @@ def validate_patch_proposal_output(
             context={"expected": expected_hash, "actual": proposal.candidate_content_hash},
         )
     return proposal
+
+
+def validate_patch_test_result_output(
+    result: object,
+    *,
+    proposal: PatchProposal,
+    required_tests: list[str] | None = None,
+) -> object:
+    """Validate an isolated PatchTestResult against candidate hash, revision, and required tests."""
+    from shared.enums import TestExecutionStatus
+    from shared.schemas import PatchTestResult
+
+    if not isinstance(result, PatchTestResult):
+        raise ContractValidationError("Expected a PatchTestResult instance.")
+    if result.incident_id != proposal.incident_id:
+        raise ContractValidationError(
+            "PatchTestResult incident_id does not match PatchProposal.",
+            context={"expected": proposal.incident_id, "actual": result.incident_id},
+        )
+    if result.patch_id != proposal.patch_id:
+        raise ContractValidationError(
+            "PatchTestResult patch_id does not match PatchProposal.",
+            context={"expected": proposal.patch_id, "actual": result.patch_id},
+        )
+    if result.tested_candidate_hash != proposal.candidate_content_hash:
+        raise ContractValidationError(
+            "PatchTestResult tested_candidate_hash does not match PatchProposal.",
+            context={
+                "expected": proposal.candidate_content_hash,
+                "actual": result.tested_candidate_hash,
+            },
+        )
+    if result.isolation_metadata.get("mode") == "host":
+        raise ContractValidationError(
+            "PatchTestResult cannot be accepted from host execution mode."
+        )
+    if required_tests and result.overall_status == TestExecutionStatus.TEST_PASSED:
+        outcomes_by_name = {o.test_name: o.status for o in result.individual_outcomes}
+        missing = [
+            tid
+            for tid in required_tests
+            if outcomes_by_name.get(tid) != TestExecutionStatus.TEST_PASSED
+        ]
+        if missing:
+            raise ContractValidationError(
+                "PatchTestResult omitted or failed mandatory tests.",
+                context={"missing_or_failed_tests": missing},
+            )
+    return result

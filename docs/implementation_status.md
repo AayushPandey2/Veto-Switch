@@ -1,6 +1,6 @@
 # Killswitch X — Implementation Status
 
-**Current Phase:** Prompt 07 / 12 — Evidence-Grounded AI Patch Engineer (`remediation/`). Note: Phase 06 (`flag_auditor.py`) is not yet implemented in this workspace.
+**Current Phase:** Prompt 08 / 12 — Isolated Patch Verification Orchestrator (`remediation/patch_tests.py`, `remediation/verification/`, `remediation/adapters/`). Note: Phase 06 (`flag_auditor.py`) is not yet implemented in this workspace.
 
 > [!NOTE]
 > Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–07 and could not be inspected.
@@ -23,6 +23,8 @@
   - `DeterministicContainmentStrategist` (`ContainmentStrategistAgent`), versioned `config/containment_policy.json`, hard feasibility gates, replacement safety checks, deterministic weighted scoring & sensitivity analysis, hardened `v2` `ContainmentProposal` hashing, `IncidentOrchestrator.execute_containment_analysis` stopping at `AWAITING_APPROVAL`, offline demos (`agent_core.demos.blast_radius_demos`), and 7-case evaluator (`agent_core.evaluations.blast_radius_evaluator`).
 - **Phase 07 AI Patch Engineer (`remediation/patch_agent.py`, `remediation/patching/`, `remediation/prompts/`):**
   - Target descriptors distinguishing `stand_in` vs `platform_demo_app`, bounded `SourceSnapshot` & AST localization, `LLMGateway` integration with bounded repair and revision-compatible `REFERENCE_FIXTURE` fallback, strict unified diff parsing & in-memory applicability, AST static safety & minimality metrics, `ArtifactType.PATCH_DIFF` persistence, `ReviewerChecklist` + PR-ready Markdown summary, `IncidentOrchestrator.execute_patch_generation`, offline demos (`remediation.demos`), and 5-case evaluator (`remediation.evaluations.patch_evaluator`, `docs/patch_engineer.md`).
+- **Phase 08 Isolated Patch Verification (`remediation/patch_tests.py`, `remediation/verification/`, `remediation/adapters/`):**
+  - `IsolatedPatchVerificationOrchestrator` and reconciled `verify_patch`, `SecurityServicePatchRunner` (`httpx` + `X-KSX-Token`, no redirects, bounded response size) and offline `FixturePatchTestRunner`, mandatory test-plan completeness, 5-point revision identity verification, isolation & evidence integrity policy, strengthened `guard_patch_verification` & `validate_patch_test_result_output`, `IncidentOrchestrator.execute_patch_verification`, Phase 09 `RecoveryHandoff` (`deployment_verified=False`, `rollout_authorized=False`), dashboard JSON & Markdown serializers, offline Demos A–J (`remediation.verification_demos`), and 15-case evaluator (`remediation.evaluations.patch_verification_evaluator`, `docs/patch_verification.md`).
 
 ### Intentionally Deferred to Phase 06 & Phases 08–12
 

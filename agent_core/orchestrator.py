@@ -20,6 +20,7 @@ from shared.enums import (
     MappingActionEligibility,
     MappingStatus,
     RedactionStatus,
+    TestExecutionStatus,
 )
 from shared.exceptions import (
     AmbiguousMappingError,
@@ -45,6 +46,7 @@ from shared.schemas import (
     InvestigationSummary,
     MappingResult,
     PatchProposal,
+    PatchTestResult,
     RouteFlagRegistry,
     VerificationResult,
 )
@@ -91,6 +93,7 @@ from agent_core.policies import (
     validate_investigation_output,
     validate_mapping_output,
     validate_patch_proposal_output,
+    validate_patch_test_result_output,
 )
 from agent_core.replay import replay_incident as replay_from_events
 from agent_core.repositories.memory import InMemoryOrchestrationRepository
@@ -1259,6 +1262,154 @@ class IncidentOrchestrator:
             prop_event, producer_context=ai_producer, transition_context=tctx
         )
         return proposal, prop_res
+
+    async def execute_patch_verification(
+        self,
+        incident_id: str,
+        *,
+        verification_context: Any,
+        producer_context: ProducerContext,
+        patch_runner: Any | None = None,
+    ) -> tuple[Any, EventProcessingResult]:
+        """Run Phase 08 isolated patch verification and commit state transitions."""
+        from remediation.patch_tests import IsolatedPatchVerificationOrchestrator
+        from remediation.verification.models import (
+            PatchVerificationContext,
+            PatchVerificationReport,
+        )
+
+        if not isinstance(verification_context, PatchVerificationContext):
+            raise ContractValidationError(
+                "verification_context must be a PatchVerificationContext instance."
+            )
+
+        incident = await self._repo.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+        if incident.current_state != IncidentState.PATCH_PENDING:
+            raise InvalidTransitionError(
+                "Patch verification requires incident in PATCH_PENDING, "
+                f"got {incident.current_state.value!r}."
+            )
+
+        next_seq = incident.latest_event_sequence + 1
+        req_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.PATCH_TEST_REQUESTED,
+            actor=producer_context.producer_id,
+            actor_type=producer_context.actor_type,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            timestamp_utc=self._clock.now(),
+            payload={
+                "patch_id": verification_context.proposal.patch_id,
+                "source_target": verification_context.source_target,
+            },
+        )
+        req_res = await self.process_event(req_event, producer_context=producer_context)
+        if not req_res.accepted:
+            raise InvalidTransitionError(
+                f"Patch test request rejected by orchestrator: {req_res.reason_code}",
+                context={"incident_id": incident.incident_id, "reason_code": req_res.reason_code},
+            )
+        next_seq += 1
+
+        verifier_producer = ProducerContext(
+            producer_id="isolated_patch_verifier",
+            actor_type=ActorType.SECURITY_VERIFIER,
+            authenticated=producer_context.authenticated,
+            trusted_channel=producer_context.trusted_channel,
+            provenance_mode=producer_context.provenance_mode,
+        )
+
+        patch_orch = IsolatedPatchVerificationOrchestrator(
+            runner=patch_runner,
+            evidence_repo=self._evidence_repo,
+        )
+        report: PatchVerificationReport = await patch_orch.verify_candidate(verification_context)
+        ptr: PatchTestResult | None = report.patch_test_result
+
+        if report.decision.accepted and ptr is not None:
+            validate_patch_test_result_output(
+                ptr,
+                proposal=verification_context.proposal,
+                required_tests=report.decision.test_plan.required_test_ids,
+            )
+
+        evidence_ids = [a.artifact_id for a in report.artifacts]
+        completed_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.PATCH_TEST_COMPLETED,
+            actor="isolated_patch_verifier",
+            actor_type=ActorType.SECURITY_VERIFIER,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            evidence_ids=evidence_ids,
+            timestamp_utc=self._clock.now(),
+            payload={
+                "patch_id": report.patch_id,
+                "accepted": report.decision.accepted,
+                "overall_status": report.decision.overall_status.value,
+                "reason_codes": [c.value for c in report.decision.reason_codes],
+            },
+        )
+        completed_ctx = TransitionContext(
+            producer_context=verifier_producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            patch_proposal=verification_context.proposal,
+            patch_test_result=ptr,
+            required_patch_tests=list(report.decision.test_plan.required_test_ids),
+        )
+        await self.process_event(
+            completed_event,
+            producer_context=verifier_producer,
+            transition_context=completed_ctx,
+        )
+        next_seq += 1
+
+        if report.decision.accepted and ptr is not None:
+            outcome_event_type = EventType.PATCH_TEST_PASSED
+        elif report.decision.overall_status in (
+            TestExecutionStatus.INFRASTRUCTURE_ERROR,
+            TestExecutionStatus.NOT_RUN,
+        ):
+            outcome_event_type = EventType.PATCH_TEST_INFRASTRUCTURE_ERROR
+        else:
+            outcome_event_type = EventType.PATCH_TEST_FAILED
+
+        outcome_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=outcome_event_type,
+            actor="isolated_patch_verifier",
+            actor_type=ActorType.SECURITY_VERIFIER,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            evidence_ids=evidence_ids,
+            timestamp_utc=self._clock.now(),
+            payload={
+                "patch_id": report.patch_id,
+                "test_run_id": ptr.test_run_id if ptr is not None else "none",
+                "accepted": report.decision.accepted,
+                "reason_codes": [c.value for c in report.decision.reason_codes],
+            },
+        )
+        outcome_ctx = TransitionContext(
+            producer_context=verifier_producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            patch_proposal=verification_context.proposal,
+            patch_test_result=ptr,
+            required_patch_tests=list(report.decision.test_plan.required_test_ids),
+        )
+        final_res = await self.process_event(
+            outcome_event,
+            producer_context=verifier_producer,
+            transition_context=outcome_ctx,
+        )
+        return report, final_res
 
 
 async def on_incident_event(

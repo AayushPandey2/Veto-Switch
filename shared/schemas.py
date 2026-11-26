@@ -1140,6 +1140,38 @@ class PatchTestResult(KillswitchModel):
         default=EvidenceProvenance.SECURITY_TEST_OUTPUT,
         description="Provenance of the isolated test result.",
     )
+    base_source_revision: str | None = Field(
+        default=None,
+        description="Authoritative base source revision against which the patch was generated.",
+    )
+    expected_patched_revision: str | None = Field(
+        default=None,
+        description="Expected post-patch revision derived from base revision and candidate hash.",
+    )
+    runner_computed_patched_revision: str | None = Field(
+        default=None,
+        description="Post-patch revision computed by the isolated runner after applying the diff.",
+    )
+    runtime_observed_revision: str | None = Field(
+        default=None,
+        description="Revision observed from the running patched target in the sandbox.",
+    )
+    source_target: str | None = Field(
+        default=None,
+        description="Source target identifier verified in isolation (e.g., stand_in).",
+    )
+    required_test_ids: list[str] = Field(
+        default_factory=list,
+        description="Authoritative mandatory test IDs required for acceptance.",
+    )
+    isolation_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured sandbox isolation metadata (mode, network_disabled, etc.).",
+    )
+    verification_policy_version: str | None = Field(
+        default=None,
+        description="Policy version used by the isolated verification orchestrator.",
+    )
 
     @field_validator("tested_candidate_hash")
     @classmethod
@@ -1154,16 +1186,51 @@ class PatchTestResult(KillswitchModel):
     @property
     def has_revision_mismatch(self) -> bool:
         """Return True when tested source revision differs from expected source revision."""
-        return self.tested_source_revision != self.expected_source_revision
+        if self.tested_source_revision != self.expected_source_revision:
+            return True
+        if (
+            self.base_source_revision is not None
+            and self.base_source_revision != self.expected_source_revision
+        ):
+            return True
+        if (
+            self.expected_patched_revision is not None
+            and self.runner_computed_patched_revision is not None
+            and self.expected_patched_revision != self.runner_computed_patched_revision
+        ):
+            return True
+        if self.runtime_observed_revision is not None:
+            reference_rev = self.runner_computed_patched_revision or self.tested_source_revision
+            if self.runtime_observed_revision != reference_rev:
+                return True
+        return False
+
+    @property
+    def has_complete_required_tests(self) -> bool:
+        """Return True when all declared required_test_ids have passing outcomes."""
+        if not self.required_test_ids:
+            return True
+        outcomes_by_name = {item.test_name: item.status for item in self.individual_outcomes}
+        return all(
+            outcomes_by_name.get(test_id) == TestExecutionStatus.TEST_PASSED
+            for test_id in self.required_test_ids
+        )
 
     @property
     def is_trusted_pass(self) -> bool:
-        """Return True only when status passed, revisions match, and all tests passed."""
+        """Return True only when status passed, revisions match, and all required tests passed."""
         if self.overall_status != TestExecutionStatus.TEST_PASSED:
             return False
         if self.has_revision_mismatch:
             return False
         if not self.individual_outcomes:
+            return False
+        if not self.has_complete_required_tests:
+            return False
+        if (
+            self.isolation_metadata.get("require_runtime_revision_match") is True
+            and not self.runtime_observed_revision
+        ):
             return False
         return all(
             item.status == TestExecutionStatus.TEST_PASSED for item in self.individual_outcomes

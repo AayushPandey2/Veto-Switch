@@ -58,5 +58,11 @@ jobs:
       - name: Run offline Phase 07 patch engineer evaluation check
         run: python -m remediation.evaluations.patch_evaluator
 
+      - name: Run offline Phase 08 patch verification demonstrations
+        run: python -m remediation.verification_demos
+
+      - name: Run offline Phase 08 patch verification evaluation check
+        run: python -m remediation.evaluations.patch_verification_evaluator
+
       - name: Run unit, contract, and orchestration tests (offline)
         run: pytest -v

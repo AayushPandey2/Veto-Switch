@@ -844,6 +844,29 @@ def guard_patch_verification(
             "Tested candidate hash does not match active patch hash.",
             missing=["matching_candidate_hash"],
         )
+    if ptr.isolation_metadata.get("mode") == "host":
+        return _fail(
+            "patch_verification",
+            "INSUFFICIENT_ISOLATION",
+            "Host execution is prohibited for isolated patch verification.",
+            missing=["isolated_sandbox"],
+        )
+    if context.required_patch_tests:
+        outcomes_by_name = {
+            item.test_name: item.status for item in ptr.individual_outcomes
+        }
+        missing_req = [
+            tid
+            for tid in context.required_patch_tests
+            if outcomes_by_name.get(tid) != TestExecutionStatus.TEST_PASSED
+        ]
+        if missing_req:
+            return _fail(
+                "patch_verification",
+                "MISSING_REQUIRED_PATCH_TESTS",
+                "PatchTestResult did not pass all required tests.",
+                missing=missing_req,
+            )
     if not ptr.is_trusted_pass:
         return _fail(
             "patch_verification",

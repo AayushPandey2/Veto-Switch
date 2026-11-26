@@ -324,6 +324,7 @@ class TransitionContext:
     operation_receipt: OperationReceipt | None = None
     patch_proposal: PatchProposal | None = None
     patch_test_result: PatchTestResult | None = None
+    required_patch_tests: list[str] | None = None
     deployment_evidence: DeploymentEvidence | None = None
     rollout_plan: RolloutPlan | None = None
     metric_snapshot: MetricSnapshot | None = None
