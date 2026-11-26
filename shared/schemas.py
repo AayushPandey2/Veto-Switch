@@ -75,7 +75,7 @@ from shared.enums import (
 )
 from shared.exceptions import KillswitchError
 from shared.identifiers import utc_now
-from shared.serialization import compute_proposal_hash
+from shared.serialization import compute_proposal_hash, sha256_canonical
 from shared.validation import (
     validate_dependency_graph_integrity,
     validate_evidence_reference_ids,
@@ -636,6 +636,15 @@ class ContainmentProposal(KillswitchModel):
     rollback_considerations: list[str] = Field(
         default_factory=list, description="Notes regarding reverting this containment action."
     )
+    hash_version: str = Field(
+        default="v1",
+        min_length=1,
+        description="Proposal canonical hash version ('v1' legacy fixture, 'v2' hardened).",
+    )
+    review_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional review-binding metadata (graph/registry fingerprints, strategy ID).",
+    )
     proposal_hash: str = Field(
         description="Canonical SHA-256 hash binding security-relevant proposal fields."
     )
@@ -652,7 +661,7 @@ class ContainmentProposal(KillswitchModel):
 
     def canonical_hash_payload(self) -> dict[str, Any]:
         """Return the canonical dictionary covered by ``proposal_hash``."""
-        return {
+        base: dict[str, Any] = {
             "proposal_id": self.proposal_id,
             "incident_id": self.incident_id,
             "proposal_type": self.proposal_type.value,
@@ -665,10 +674,28 @@ class ContainmentProposal(KillswitchModel):
             "approval_required": self.approval_required,
             "idempotency_token": self.idempotency_token,
         }
+        if self.hash_version != "v1":
+            base.update(
+                {
+                    "hash_version": self.hash_version,
+                    "reason": self.reason,
+                    "alternatives": list(self.alternatives),
+                    "expected_disruption": self.expected_disruption,
+                    "evidence_ids": sorted(self.evidence_ids),
+                    "created_at": self.created_at.isoformat(),
+                    "expires_at": self.expires_at.isoformat(),
+                    "rollback_considerations": list(self.rollback_considerations),
+                    "review_metadata": self.review_metadata,
+                }
+            )
+        return base
 
     def compute_hash(self) -> str:
         """Compute deterministic SHA-256 digest of the proposal's canonical fields."""
-        return compute_proposal_hash(self.canonical_hash_payload())
+        payload = self.canonical_hash_payload()
+        if self.hash_version == "v1":
+            return compute_proposal_hash(payload)
+        return sha256_canonical(payload)
 
     def verify_hash(self) -> bool:
         """Return True iff stored ``proposal_hash`` matches computed canonical hash."""
@@ -2061,3 +2088,36 @@ class RolloutPolicyConfig(KillswitchModel):
                 raise ValueError("stages_percent must be strictly increasing.")
             prev = pct
         return self
+
+
+class ContainmentPolicyWeights(KillswitchModel):
+    """Normalized non-negative weights summing to 1.0 for containment policy scoring."""
+
+    residual_exposure: float = Field(default=0.50, ge=0.0, le=1.0)
+    operational_disruption: float = Field(default=0.25, ge=0.0, le=1.0)
+    dependency_impact: float = Field(default=0.15, ge=0.0, le=1.0)
+    uncertainty: float = Field(default=0.10, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _enforce_weights_sum_to_one(self) -> ContainmentPolicyWeights:
+        total = (
+            self.residual_exposure
+            + self.operational_disruption
+            + self.dependency_impact
+            + self.uncertainty
+        )
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"ContainmentPolicyWeights must sum to 1.0 (got {total}).")
+        return self
+
+
+class ContainmentPolicyConfig(KillswitchModel):
+    """Schema for ``config/containment_policy.json``."""
+
+    policy_version: str = Field(min_length=1, description="Containment policy version.")
+    is_demo_default: StrictBool = Field(default=True)
+    description: str = Field(default="")
+    weights: ContainmentPolicyWeights = Field(default_factory=ContainmentPolicyWeights)
+    max_traversal_depth: StrictInt = Field(default=16, ge=1, le=256)
+    max_graph_nodes: StrictInt = Field(default=500, ge=10, le=100_000)
+    default_proposal_ttl_seconds: StrictInt = Field(default=900, ge=30, le=86_400)

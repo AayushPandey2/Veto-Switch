@@ -1,10 +1,10 @@
-# Killswitch X AI Evaluation Report (`eval_090e6f1465c5`)
+# Killswitch X AI Evaluation Report (`eval_35b7ed10f981`)
 
 - **Evaluation Mode:** `offline_fixture`
 - **Dataset Version:** `1.0.0` (`synthetic_dataset=True`)
 - **Provider / Model:** `offline_fixture` / `fixture-investigator-v1`
 - **Prompt Version / Hash:** `1.0.0` (`58b49133c5474c7e...`)
-- **Evaluated At (UTC):** `2026-11-26T18:49:20.386811+00:00`
+- **Evaluated At (UTC):** `2026-11-26T18:59:37.861770+00:00`
 
 ## Aggregate Metrics
 
@@ -24,7 +24,7 @@
 | Recommended Next-Action Accuracy | 100.0% |
 | Tool Violations (Attempted / Executed) | 2 / 0 |
 | Fallback Correctness | 100.0% |
-| Avg Context / Validation / Total Latency (ms) | 0.194 / 0.083 / 1.559 |
+| Avg Context / Validation / Total Latency (ms) | 0.197 / 0.093 / 1.507 |
 | Measured Input / Output Tokens (Synthetic/Fixture) | 3880 / 2000 |
 | Context Reduction Savings (Estimated Tokens) | 2354 |
 

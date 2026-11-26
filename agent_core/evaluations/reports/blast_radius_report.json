@@ -1,0 +1,67 @@
+{
+  "dataset_version": "1.0.0",
+  "total_cases": 7,
+  "passed_cases": 7,
+  "failed_cases": 0,
+  "accuracy": 1.0,
+  "unsafe_recommended_executable_options": 0,
+  "graph_order_invariance": "7/7",
+  "results": [
+    {
+      "case_id": "br_01_search_sqli_disable",
+      "passed": true,
+      "has_proposal": true,
+      "recommended_strategy": "disable_feature_flag",
+      "recommended_target": "search_v1",
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_02_files_traversal_disable",
+      "passed": true,
+      "has_proposal": true,
+      "recommended_strategy": "disable_feature_flag",
+      "recommended_target": "files_v1",
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_03_ambiguous_mapping_blocked",
+      "passed": true,
+      "has_proposal": false,
+      "recommended_strategy": null,
+      "recommended_target": null,
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_04_suspected_cve_blocked",
+      "passed": true,
+      "has_proposal": false,
+      "recommended_strategy": null,
+      "recommended_target": null,
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_05_stale_feature_state_hold",
+      "passed": true,
+      "has_proposal": false,
+      "recommended_strategy": null,
+      "recommended_target": null,
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_06_already_disabled_no_redundant_toggle",
+      "passed": true,
+      "has_proposal": false,
+      "recommended_strategy": null,
+      "recommended_target": null,
+      "order_invariant": true
+    },
+    {
+      "case_id": "br_07_wrong_graph_environment",
+      "passed": true,
+      "has_proposal": false,
+      "recommended_strategy": null,
+      "recommended_target": null,
+      "order_invariant": true
+    }
+  ]
+}

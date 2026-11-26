@@ -1,0 +1,112 @@
+{
+  "dataset_version": "1.0.0",
+  "description": "Deterministic labeled evaluation cases for Phase 05 Blast Radius & Containment Strategist.",
+  "cases": [
+    {
+      "case_id": "br_01_search_sqli_disable",
+      "route": "/search",
+      "component": "search_service",
+      "selected_flag": "search_v1",
+      "mapping_status": "matched",
+      "finding_status": "reproduced",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5},
+        {"feature_name": "search_v2", "enabled": false, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": true,
+      "expected_strategy": "disable_feature_flag",
+      "expected_target": "search_v1"
+    },
+    {
+      "case_id": "br_02_files_traversal_disable",
+      "route": "/files",
+      "component": "file_service",
+      "selected_flag": "files_v1",
+      "mapping_status": "matched",
+      "finding_status": "reproduced",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": true,
+      "expected_strategy": "disable_feature_flag",
+      "expected_target": "files_v1"
+    },
+    {
+      "case_id": "br_03_ambiguous_mapping_blocked",
+      "route": "/search",
+      "component": "search_service",
+      "selected_flag": null,
+      "mapping_status": "ambiguous",
+      "finding_status": "reproduced",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": false,
+      "expected_strategy": null,
+      "expected_target": null
+    },
+    {
+      "case_id": "br_04_suspected_cve_blocked",
+      "route": "/files",
+      "component": "file_service",
+      "selected_flag": "files_v1",
+      "mapping_status": "matched",
+      "finding_status": "suspected",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": false,
+      "expected_strategy": null,
+      "expected_target": null
+    },
+    {
+      "case_id": "br_05_stale_feature_state_hold",
+      "route": "/files",
+      "component": "file_service",
+      "selected_flag": "files_v1",
+      "mapping_status": "matched",
+      "finding_status": "reproduced",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 3600}
+      ],
+      "expected_proposal": false,
+      "expected_strategy": null,
+      "expected_target": null
+    },
+    {
+      "case_id": "br_06_already_disabled_no_redundant_toggle",
+      "route": "/files",
+      "component": "file_service",
+      "selected_flag": "files_v1",
+      "mapping_status": "matched",
+      "finding_status": "reproduced",
+      "environment": "demo-staging",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": false, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": false,
+      "expected_strategy": null,
+      "expected_target": null
+    },
+    {
+      "case_id": "br_07_wrong_graph_environment",
+      "route": "/files",
+      "component": "file_service",
+      "selected_flag": "files_v1",
+      "mapping_status": "matched",
+      "finding_status": "reproduced",
+      "environment": "production",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_proposal": false,
+      "expected_strategy": null,
+      "expected_target": null
+    }
+  ]
+}

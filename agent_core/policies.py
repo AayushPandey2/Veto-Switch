@@ -8,7 +8,7 @@ identity, and evidence rules.
 
 from __future__ import annotations
 
-from shared.enums import EvidenceProvenance, FindingStatus, MappingStatus
+from shared.enums import EvidenceProvenance, FindingStatus, MappingStatus, ProposalType
 from shared.exceptions import (
     AmbiguousMappingError,
     ContractValidationError,
@@ -172,12 +172,32 @@ def validate_containment_proposal_output(
     finding: Finding,
     mapping: MappingResult,
     registry: RouteFlagRegistry,
+    require_v2_hash: bool = False,
+    expected_environment: str | None = None,
 ) -> ContainmentProposal:
     """Validate an injected ContainmentStrategistAgent proposal before acceptance."""
     if proposal.incident_id != finding.incident_id:
         raise ContractValidationError(
             "ContainmentProposal incident_id does not match Finding.",
             context={"expected": finding.incident_id, "actual": proposal.incident_id},
+        )
+    if finding.status != FindingStatus.REPRODUCED:
+        raise ContractValidationError(
+            "ContainmentProposal requires a reproduced finding.",
+            context={"finding_status": finding.status.value},
+        )
+    if mapping.mapping_status != MappingStatus.MATCHED or mapping.manual_review_required:
+        raise ContractValidationError(
+            "ContainmentProposal requires an actionable, matched MappingResult.",
+            context={
+                "mapping_status": mapping.mapping_status.value,
+                "manual_review_required": mapping.manual_review_required,
+            },
+        )
+    if require_v2_hash and proposal.hash_version != "v2":
+        raise ContractValidationError(
+            "Live containment proposal must use hardened hash_version='v2'.",
+            context={"hash_version": proposal.hash_version},
         )
     if not proposal.verify_hash():
         raise ContractValidationError(
@@ -189,10 +209,25 @@ def validate_containment_proposal_output(
             "ContainmentProposal must enforce approval_required=True.",
             context={"proposal_id": proposal.proposal_id},
         )
+    if proposal.proposal_type != ProposalType.CONTAINMENT_FLAG_DISABLE:
+        raise ContractValidationError(
+            f"Unsupported autonomous proposal_type {proposal.proposal_type.value!r}.",
+            context={"proposal_type": proposal.proposal_type.value},
+        )
+    if proposal.desired_enabled is not False:
+        raise ContractValidationError(
+            "Containment flag-disable proposal must set desired_enabled=False.",
+            context={"desired_enabled": proposal.desired_enabled},
+        )
     if proposal.environment != registry.environment:
         raise ContractValidationError(
             "ContainmentProposal environment does not match active registry.",
             context={"expected": registry.environment, "actual": proposal.environment},
+        )
+    if expected_environment and proposal.environment != expected_environment:
+        raise ContractValidationError(
+            "ContainmentProposal environment does not match incident environment.",
+            context={"expected": expected_environment, "actual": proposal.environment},
         )
     if proposal.flag_name not in registry.declared_features:
         raise UnknownFeatureError(

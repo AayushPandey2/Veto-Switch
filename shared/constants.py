@@ -39,6 +39,7 @@ DEFAULT_ARTIFACT_DIR: Final[str] = "artifacts"
 DEFAULT_ROUTE_REGISTRY_PATH: Final[str] = "config/route_flag_map.json"
 DEFAULT_DEPENDENCY_GRAPH_PATH: Final[str] = "config/dependency_graph.json"
 DEFAULT_ROLLOUT_POLICY_PATH: Final[str] = "config/rollout_policy.json"
+DEFAULT_CONTAINMENT_POLICY_PATH: Final[str] = "config/containment_policy.json"
 
 # Standardized entity identifier prefixes.
 ID_PREFIXES: Final[dict[str, str]] = {

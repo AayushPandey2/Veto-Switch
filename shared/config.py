@@ -21,6 +21,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from shared.constants import (
     DEFAULT_ARTIFACT_DIR,
+    DEFAULT_CONTAINMENT_POLICY_PATH,
     DEFAULT_DEPENDENCY_GRAPH_PATH,
     DEFAULT_LLM_MAX_CONTEXT_CHARS,
     DEFAULT_LLM_MAX_RETRIES,
@@ -30,7 +31,12 @@ from shared.constants import (
     DEFAULT_ROUTE_REGISTRY_PATH,
 )
 from shared.exceptions import ConfigurationError
-from shared.schemas import DependencyGraph, RolloutPolicyConfig, RouteFlagRegistry
+from shared.schemas import (
+    ContainmentPolicyConfig,
+    DependencyGraph,
+    RolloutPolicyConfig,
+    RouteFlagRegistry,
+)
 
 
 class AIServiceSettings(BaseSettings):
@@ -209,5 +215,19 @@ def load_rollout_policy(path: Path | str = DEFAULT_ROLLOUT_POLICY_PATH) -> Rollo
     except Exception as exc:
         raise ConfigurationError(
             "RolloutPolicyConfig failed schema validation.",
+            context={"path": str(path), "reason": str(exc)},
+        ) from exc
+
+
+def load_containment_policy(
+    path: Path | str = DEFAULT_CONTAINMENT_POLICY_PATH,
+) -> ContainmentPolicyConfig:
+    """Load and validate ``config/containment_policy.json``."""
+    raw = _load_json_file(Path(path))
+    try:
+        return ContainmentPolicyConfig.model_validate(raw)
+    except Exception as exc:
+        raise ConfigurationError(
+            "ContainmentPolicyConfig failed schema validation.",
             context={"path": str(path), "reason": str(exc)},
         ) from exc

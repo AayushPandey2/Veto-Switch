@@ -1,11 +1,11 @@
 # Killswitch X — Implementation Status
 
-**Current Phase:** Prompt 04 / 12 — Deterministic Vulnerability-to-Feature-Flag Mapping, Registry Intelligence, Runtime State Validation and Evidence-Driven Orchestration.
+**Current Phase:** Prompt 05 / 12 — Blast Radius Intelligence, Dependency Graph Reasoning, Counterfactual Impact Analysis, Deterministic Containment Strategy Ranking and Human-Approval-Ready Proposals.
 
 > [!NOTE]
-> Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–04 and could not be inspected.
+> Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–05 and could not be inspected.
 
-## Phase 01–04 Inventory
+## Phase 01–05 Inventory
 
 ### Implemented & Verified
 - **Phase 01 Foundation:** Repository scaffolding, `.gitignore`, `.env.example`, `pyproject.toml`, `requirements.txt`, `.github/workflows/ci.yml`, `shared/` contracts/schemas/enums/exceptions/logging/config, `config/*.json`, `shared/fixtures/*.json`, and `tests/`.
@@ -18,12 +18,15 @@
 - **Phase 04 Vulnerability-to-Feature-Flag Mapping (`agent_core/flag_mapper.py`, `agent_core/mapping/`, `agent_core/adapters/security_contract.py`):**
   - Deterministic, order-invariant 6-tier `DeterministicFlagMapper` (`FeatureMapperAgent`) with zero LLM calls, registry SHA-256 fingerprinting & validation, exact route/alias/variant/component/implementation resolvers, runtime `FeatureState` freshness & conflict validation, evidence provenance/existence gates, and dashboard JSON serializer (`docs/flag_mapping.md`).
   - Strengthened independent semantic policy (`validate_mapping_output`) and transition guards (`guard_registry_validity`, `guard_mapping_validity`), integrated `IncidentOrchestrator.execute_mapping`, `feat/security` contract normalization adapter, 10 offline mapping demos (`agent_core.demos.mapping_demos`), and 12-case deterministic mapping evaluator (`agent_core.evaluations.mapping_evaluator`).
+- **Phase 05 Blast Radius Intelligence & Containment Strategist (`agent_core/blast_radius.py`, `agent_core/graph_intelligence/`, `agent_core/containment_strategist.py`, `agent_core/containment/`):**
+  - Directed multigraph index (`O(V + E)` bounded BFS), integrity validation, relationship-specific exposure vs disruption analysis, non-mutating counterfactual simulation, and dashboard graph serializer (`docs/blast_radius_intelligence.md`).
+  - `DeterministicContainmentStrategist` (`ContainmentStrategistAgent`), versioned `config/containment_policy.json`, hard feasibility gates, replacement safety checks, deterministic weighted scoring & sensitivity analysis, hardened `v2` `ContainmentProposal` hashing, `IncidentOrchestrator.execute_containment_analysis` stopping at `AWAITING_APPROVAL`, offline demos (`agent_core.demos.blast_radius_demos`), and 7-case evaluator (`agent_core.evaluations.blast_radius_evaluator`).
 
-### Intentionally Deferred to Phases 05–12
+### Intentionally Deferred to Phases 06–12
 
 | Subsystem | Deferred Modules | Planned Owner |
 | :--- | :--- | :--- |
-| Blast Radius Graph & Coverage Auditor | `blast_radius.py`, `flag_auditor.py` | AI/ML Engineer 1 |
+| Feature Flag Coverage Auditor | `flag_auditor.py` | AI/ML Engineer 1 |
 | Remediation & Recovery Intelligence | `remediation/patch_agent.py`, `patch_tests.py`, `rollout_agent.py`, `rollback.py`, `evidence.py`, `policies.py`, `prompts/` | AI/ML Engineer 2 |
 | Security Verification & Isolated Runner | `security/` scanner adapters, controlled reproduction, regression tests, isolated patch runner | Cybersecurity Engineer |
 | Platform Backend, UI & Flagsmith Executor | `platform/` FastAPI backend, durable transactional DB repos, Flagsmith integration, approval workflow, Flask demo app, React UI | Full-stack & Cybersecurity Engineer |

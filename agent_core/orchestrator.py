@@ -48,6 +48,8 @@ from shared.schemas import (
 from shared.serialization import canonical_json, sha256_text
 
 from agent_core.approval_validator import ApprovalValidator
+from agent_core.containment.models import ContainmentAnalysisResult
+from agent_core.containment_strategist import DeterministicContainmentStrategist
 from agent_core.context import (
     Clock,
     ContainmentStrategistAgent,
@@ -951,6 +953,160 @@ class IncidentOrchestrator:
         return validate_containment_proposal_output(
             proposal, finding=finding, mapping=mapping, registry=self._route_registry
         )
+
+    async def execute_containment_analysis(
+        self,
+        *,
+        finding: Finding,
+        mapping: MappingResult,
+        dependency_graph: DependencyGraph,
+        observed_features: list[FeatureState],
+        producer_context: ProducerContext,
+    ) -> tuple[ContainmentAnalysisResult | None, EventProcessingResult]:
+        """Run blast-radius & containment analysis and transition to AWAITING_APPROVAL.
+
+        Stops strictly at the human-approval boundary without executing Flagsmith changes.
+        If no feasible executable strategy exists, emits ``MANUAL_REVIEW_REQUESTED``.
+        """
+        if self._containment_strategist is None or self._route_registry is None:
+            raise ConfigurationError(
+                "ContainmentStrategistAgent and RouteFlagRegistry are required."
+            )
+        incident = await self._repo.get_incident(finding.incident_id)
+        if incident is None:
+            raise ContractValidationError(
+                f"Cannot analyze containment for unknown incident {finding.incident_id!r}."
+            )
+
+        ai_producer = ProducerContext(
+            producer_id="agent_core_containment_strategist",
+            actor_type=ActorType.AI_AGENT,
+            authenticated=producer_context.authenticated,
+            trusted_channel=producer_context.trusted_channel,
+            provenance_mode=producer_context.provenance_mode,
+        )
+
+        analysis: ContainmentAnalysisResult | None = None
+        proposal: ContainmentProposal | None = None
+        if isinstance(self._containment_strategist, DeterministicContainmentStrategist):
+            analysis = await self._containment_strategist.analyze_containment(
+                finding,
+                mapping,
+                dependency_graph,
+                observed_features,
+                registry=self._route_registry,
+                application_revision=incident.source_revision,
+                environment=incident.environment,
+            )
+            proposal = analysis.proposal
+        else:
+            proposal = await self._containment_strategist.propose_containment(
+                finding, mapping, dependency_graph, observed_features
+            )
+
+        next_seq = incident.latest_event_sequence + 1
+        if analysis is not None and self._evidence_repo is not None:
+            serialized = canonical_json(analysis.model_dump(mode="json"))
+            art_ref = ArtifactReference(
+                artifact_id=generate_artifact_id(),
+                incident_id=incident.incident_id,
+                artifact_type=ArtifactType.INCIDENT_EVIDENCE_BUNDLE,
+                content_hash=sha256_text(serialized),
+                storage_ref=f"containment/{incident.incident_id}/analysis.json",
+                created_at=self._clock.now(),
+                producer="agent_core_containment_strategist",
+                provenance=(
+                    EvidenceProvenance.REFERENCE_FIXTURE
+                    if self._fixture_mode
+                    else EvidenceProvenance.DETERMINISTIC_REASONING
+                ),
+                content_type="application/json",
+                size_bytes=len(serialized.encode("utf-8")),
+                source_revision=incident.source_revision,
+                redaction_status=RedactionStatus.REDACTED,
+            )
+            await self._evidence_repo.store_artifact(art_ref, serialized.encode("utf-8"))
+
+        if proposal is None:
+            review_event = build_incident_event(
+                incident_id=incident.incident_id,
+                event_type=EventType.MANUAL_REVIEW_REQUESTED,
+                actor="agent_core_containment_strategist",
+                actor_type=ActorType.AI_AGENT,
+                sequence_number=next_seq,
+                correlation_id=incident.correlation_id,
+                evidence_ids=list(mapping.evidence_ids or finding.evidence_ids),
+                timestamp_utc=self._clock.now(),
+                payload={
+                    "finding_id": finding.finding_id,
+                    "reason": "no_feasible_executable_containment_strategy",
+                    "reason_codes": (
+                        [c.value for c in analysis.reason_codes] if analysis else []
+                    ),
+                },
+            )
+            review_res = await self.process_event(review_event, producer_context=ai_producer)
+            return analysis, review_res
+
+        validated_prop = validate_containment_proposal_output(
+            proposal,
+            finding=finding,
+            mapping=mapping,
+            registry=self._route_registry,
+            require_v2_hash=not self._fixture_mode,
+            expected_environment=incident.environment,
+        )
+
+        prop_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.CONTAINMENT_PROPOSED,
+            actor="agent_core_containment_strategist",
+            actor_type=ActorType.AI_AGENT,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            evidence_ids=list(validated_prop.evidence_ids),
+            timestamp_utc=self._clock.now(),
+            payload={
+                "proposal_id": validated_prop.proposal_id,
+                "proposal_hash": validated_prop.proposal_hash,
+                "flag_name": validated_prop.flag_name,
+                "desired_enabled": validated_prop.desired_enabled,
+                "environment": validated_prop.environment,
+            },
+        )
+        tctx = TransitionContext(
+            producer_context=ai_producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            finding=finding,
+            mapping_result=mapping,
+            containment_proposal=validated_prop,
+        )
+        prop_res = await self.process_event(
+            prop_event, producer_context=ai_producer, transition_context=tctx
+        )
+        if not prop_res.accepted:
+            return analysis, prop_res
+
+        appr_req_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.APPROVAL_REQUESTED,
+            actor="agent_core_containment_strategist",
+            actor_type=ActorType.AI_AGENT,
+            sequence_number=next_seq + 1,
+            correlation_id=incident.correlation_id,
+            evidence_ids=list(validated_prop.evidence_ids),
+            timestamp_utc=self._clock.now(),
+            payload={
+                "proposal_id": validated_prop.proposal_id,
+                "proposal_hash": validated_prop.proposal_hash,
+            },
+        )
+        appr_req_res = await self.process_event(
+            appr_req_event, producer_context=ai_producer, transition_context=tctx
+        )
+        return analysis, appr_req_res
 
 
 async def on_incident_event(

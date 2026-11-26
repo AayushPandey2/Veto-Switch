@@ -1,0 +1,14 @@
+{
+  "policy_version": "1.0.0",
+  "is_demo_default": true,
+  "description": "Configurable deterministic containment scoring weights and bounds (engineering policy defaults, not empirically measured probabilities).",
+  "weights": {
+    "residual_exposure": 0.50,
+    "operational_disruption": 0.25,
+    "dependency_impact": 0.15,
+    "uncertainty": 0.10
+  },
+  "max_traversal_depth": 16,
+  "max_graph_nodes": 500,
+  "default_proposal_ttl_seconds": 900
+}
