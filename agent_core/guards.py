@@ -26,6 +26,8 @@ from agent_core.evidence_validator import (
     validate_provenance_for_mode,
 )
 from agent_core.incident import IncidentAggregate
+from agent_core.mapping.registry import IndexedRouteRegistry
+from agent_core.mapping.resolvers import compute_authoritative_candidates
 
 GuardFn = Callable[[IncidentAggregate, IncidentEvent, TransitionContext], GuardResult]
 
@@ -434,6 +436,22 @@ def guard_registry_validity(
                 f"Selected flag {context.mapping_result.selected_flag!r} is not declared.",
                 missing=["declared_feature_flag"],
             )
+        if context.mapping_result.selected_flag:
+            indexed = IndexedRouteRegistry(reg)
+            auth_candidates = compute_authoritative_candidates(
+                indexed,
+                route=context.mapping_result.affected_route,
+                component=context.mapping_result.matched_component,
+            )
+            if context.mapping_result.selected_flag not in auth_candidates:
+                return _fail(
+                    "registry_validity",
+                    "SEMANTIC_MAPPING_MISMATCH",
+                    f"Selected flag {context.mapping_result.selected_flag!r} does not control "
+                    f"route={context.mapping_result.affected_route!r} / "
+                    f"component={context.mapping_result.matched_component!r}.",
+                    missing=["semantically_valid_feature_flag"],
+                )
     prop = context.containment_proposal or context.active_proposal
     if prop is not None:
         if prop.registry_version != reg.registry_version:
@@ -479,6 +497,15 @@ def guard_mapping_validity(
             "Mapping requires manual review before automatic flag progression.",
             missing=["human_mapping_disambiguation"],
         )
+    if mapping.diagnostics is not None:
+        eligibility = mapping.diagnostics.get("action_eligibility")
+        if eligibility in {"hold", "blocked"}:
+            return _fail(
+                "mapping_validity",
+                "MAPPING_NOT_OPERATIONALLY_ELIGIBLE",
+                f"Mapping action_eligibility={eligibility!r} prevents progression to FLAG_MAPPED.",
+                missing=["operationally_eligible_mapping"],
+            )
     return _ok(
         "mapping_validity",
         "MAPPING_VALID",

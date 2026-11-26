@@ -15,10 +15,14 @@ from shared.enums import (
     ArtifactType,
     EventType,
     EvidenceProvenance,
+    FindingStatus,
     IncidentState,
+    MappingActionEligibility,
+    MappingStatus,
     RedactionStatus,
 )
 from shared.exceptions import (
+    AmbiguousMappingError,
     ConcurrencyConflictError,
     ConfigurationError,
     ContractValidationError,
@@ -26,6 +30,7 @@ from shared.exceptions import (
     LLMProviderError,
     LLMResponseValidationError,
     UnauthorizedOperationError,
+    UnknownFeatureError,
 )
 from shared.identifiers import generate_artifact_id, generate_correlation_id
 from shared.logging_config import get_logger, log_structured
@@ -70,10 +75,12 @@ from agent_core.evidence_validator import (
     validate_producer_for_evidence,
     validate_provenance_for_mode,
 )
+from agent_core.flag_mapper import DeterministicFlagMapper
 from agent_core.idempotency import check_event_idempotency
 from agent_core.incident import IncidentAggregate
 from agent_core.intelligence.investigation_context import InvestigationInputBundle
 from agent_core.investigator import InvestigationExecutionResult, Investigator
+from agent_core.mapping.models import MappingContext, MappingDiagnostics, MappingOutcome
 from agent_core.policies import (
     validate_containment_proposal_output,
     validate_investigation_output,
@@ -718,6 +725,214 @@ class IncidentOrchestrator:
             finding, self._route_registry, observed_features
         )
         return validate_mapping_output(result, finding=finding, registry=self._route_registry)
+
+    async def execute_mapping(
+        self,
+        *,
+        finding: Finding,
+        producer_context: ProducerContext,
+        observed_features: list[FeatureState] | None = None,
+        mapping_context: MappingContext | None = None,
+    ) -> tuple[MappingOutcome, EventProcessingResult]:
+        """Run deterministic mapping integrated with IncidentOrchestrator event trail.
+
+        Records ``MAPPING_REQUESTED`` and transitions to ``FLAG_MAPPED`` only when
+        mapping is matched, semantically valid, and operationally eligible; otherwise
+        records ``MAPPING_AMBIGUOUS``, ``MAPPING_UNMAPPED``, or ``MAPPING_FAILED``
+        (with ``MANUAL_REVIEW_REQUESTED`` where required).
+        """
+        if self._feature_mapper is None or self._route_registry is None:
+            raise ConfigurationError(
+                "FeatureMapperAgent and RouteFlagRegistry are required for mapping."
+            )
+        incident = await self._repo.get_incident(finding.incident_id)
+        if incident is None:
+            raise ContractValidationError(
+                f"Cannot map unknown incident {finding.incident_id!r}."
+            )
+        if finding.status == FindingStatus.SUSPECTED:
+            raise ContractValidationError(
+                "Suspected findings cannot enter actionable feature-flag mapping.",
+                context={"finding_id": finding.finding_id, "status": finding.status.value},
+            )
+
+        now = self._clock.now()
+        next_seq = incident.latest_event_sequence + 1
+        req_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=EventType.MAPPING_REQUESTED,
+            actor=producer_context.producer_id,
+            actor_type=producer_context.actor_type,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            timestamp_utc=now,
+            payload={
+                "finding_id": finding.finding_id,
+                "registry_version": self._route_registry.registry_version,
+                "application_revision": (
+                    mapping_context.application_revision
+                    if mapping_context and mapping_context.application_revision
+                    else finding.repository_revision
+                ),
+            },
+        )
+        req_res = await self.process_event(req_event, producer_context=producer_context)
+        if not req_res.accepted:
+            raise InvalidTransitionError(
+                f"Mapping request rejected by orchestrator: {req_res.reason_code}",
+                context={"incident_id": incident.incident_id, "reason_code": req_res.reason_code},
+            )
+        next_seq += 1
+
+        states = list(observed_features or [])
+        ai_producer = ProducerContext(
+            producer_id="agent_core_flag_mapper",
+            actor_type=ActorType.AI_AGENT,
+            authenticated=producer_context.authenticated,
+            trusted_channel=producer_context.trusted_channel,
+            provenance_mode=producer_context.provenance_mode,
+        )
+
+        try:
+            if isinstance(self._feature_mapper, DeterministicFlagMapper):
+                outcome = await self._feature_mapper.map_with_diagnostics(
+                    finding,
+                    self._route_registry,
+                    states,
+                    context=mapping_context,
+                )
+            else:
+                res = await self._feature_mapper.map_finding_to_flag(
+                    finding, self._route_registry, states
+                )
+                diag = (
+                    MappingDiagnostics.model_validate(res.diagnostics)
+                    if res.diagnostics is not None
+                    else MappingDiagnostics()
+                )
+                outcome = MappingOutcome(mapping_result=res, diagnostics=diag)
+            validated_res = validate_mapping_output(
+                outcome.mapping_result,
+                finding=finding,
+                registry=self._route_registry,
+                require_actionable=False,
+                expected_environment=incident.environment,
+                expected_revision=incident.source_revision,
+            )
+            outcome = MappingOutcome(
+                mapping_result=validated_res,
+                diagnostics=outcome.diagnostics,
+            )
+        except (ContractValidationError, UnknownFeatureError, AmbiguousMappingError) as exc:
+            fail_event = build_incident_event(
+                incident_id=incident.incident_id,
+                event_type=EventType.MAPPING_FAILED,
+                actor="agent_core_flag_mapper",
+                actor_type=ActorType.AI_AGENT,
+                sequence_number=next_seq,
+                correlation_id=incident.correlation_id,
+                evidence_ids=list(finding.evidence_ids),
+                timestamp_utc=self._clock.now(),
+                payload={
+                    "finding_id": finding.finding_id,
+                    "error_code": getattr(exc, "error_code", "MAPPING_FAILED"),
+                },
+            )
+            await self.process_event(fail_event, producer_context=ai_producer)
+            raise
+
+        mapping = outcome.mapping_result
+        diag = outcome.diagnostics
+
+        if self._evidence_repo is not None:
+            serialized = canonical_json(outcome.model_dump(mode="json"))
+            art_id = generate_artifact_id()
+            art_ref = ArtifactReference(
+                artifact_id=art_id,
+                incident_id=incident.incident_id,
+                artifact_type=ArtifactType.INCIDENT_EVIDENCE_BUNDLE,
+                content_hash=sha256_text(serialized),
+                storage_ref=f"mappings/{incident.incident_id}/{finding.finding_id}.json",
+                created_at=self._clock.now(),
+                producer="agent_core_flag_mapper",
+                provenance=(
+                    EvidenceProvenance.REFERENCE_FIXTURE
+                    if self._fixture_mode
+                    else EvidenceProvenance.DETERMINISTIC_REASONING
+                ),
+                content_type="application/json",
+                size_bytes=len(serialized.encode("utf-8")),
+                source_revision=incident.source_revision,
+                redaction_status=RedactionStatus.REDACTED,
+            )
+            await self._evidence_repo.store_artifact(art_ref, serialized.encode("utf-8"))
+
+        is_actionable_match = (
+            mapping.mapping_status == MappingStatus.MATCHED
+            and not mapping.manual_review_required
+            and diag.action_eligibility == MappingActionEligibility.ELIGIBLE
+        )
+        if is_actionable_match:
+            outcome_event_type = EventType.MAPPING_MATCHED
+        elif mapping.mapping_status == MappingStatus.AMBIGUOUS:
+            outcome_event_type = EventType.MAPPING_AMBIGUOUS
+        elif mapping.mapping_status == MappingStatus.UNMAPPED:
+            outcome_event_type = EventType.MAPPING_UNMAPPED
+        else:
+            outcome_event_type = EventType.MAPPING_FAILED
+
+        outcome_event = build_incident_event(
+            incident_id=incident.incident_id,
+            event_type=outcome_event_type,
+            actor="agent_core_flag_mapper",
+            actor_type=ActorType.AI_AGENT,
+            sequence_number=next_seq,
+            correlation_id=incident.correlation_id,
+            evidence_ids=list(mapping.evidence_ids),
+            timestamp_utc=self._clock.now(),
+            payload={
+                "finding_id": finding.finding_id,
+                "mapping_status": mapping.mapping_status.value,
+                "selected_flag": mapping.selected_flag,
+                "candidate_flags": list(mapping.candidate_flags),
+                "registry_version": mapping.registry_version,
+                "registry_fingerprint": diag.registry_fingerprint,
+                "application_revision": diag.application_revision,
+                "action_eligibility": diag.action_eligibility.value,
+                "reason_codes": [c.value for c in diag.reason_codes],
+            },
+        )
+        tctx = TransitionContext(
+            producer_context=ai_producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            finding=finding,
+            mapping_result=mapping,
+        )
+        outcome_res = await self.process_event(
+            outcome_event, producer_context=ai_producer, transition_context=tctx
+        )
+
+        if outcome_res.accepted and mapping.manual_review_required:
+            review_event = build_incident_event(
+                incident_id=incident.incident_id,
+                event_type=EventType.MANUAL_REVIEW_REQUESTED,
+                actor="agent_core_flag_mapper",
+                actor_type=ActorType.AI_AGENT,
+                sequence_number=next_seq + 1,
+                correlation_id=incident.correlation_id,
+                evidence_ids=list(mapping.evidence_ids),
+                timestamp_utc=self._clock.now(),
+                payload={
+                    "finding_id": finding.finding_id,
+                    "reason": "manual_review_required_by_mapping_policy",
+                    "reason_codes": [c.value for c in diag.reason_codes],
+                },
+            )
+            await self.process_event(review_event, producer_context=ai_producer)
+
+        return outcome, outcome_res
 
     async def run_containment_strategy(
         self,

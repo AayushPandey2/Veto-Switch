@@ -55,6 +55,7 @@ from shared.enums import (
     EvidenceProvenance,
     EvidenceSupportLevel,
     FeatureObservationStatus,
+    FeatureRole,
     FindingStatus,
     GraphEdgeType,
     GraphNodeType,
@@ -430,6 +431,10 @@ class MappingResult(KillswitchModel):
     manual_review_required: StrictBool = Field(
         default=False,
         description="Mandatory True when mapping is ambiguous or unmapped.",
+    )
+    diagnostics: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional structured mapping diagnostics (method, reason_codes, readiness).",
     )
 
     @field_validator("evidence_ids")
@@ -1914,13 +1919,60 @@ class IncidentRecord(KillswitchModel):
 # ------------------------------------------------------------------------------
 # Configuration Fixture Schemas (`config/*.json`)
 # ------------------------------------------------------------------------------
+class ImplementationBinding(KillswitchModel):
+    """Explicit relationship between an application implementation and its controlling flag."""
+
+    implementation_id: str = Field(min_length=1, description="Implementation or variant ID.")
+    flag_name: str = Field(min_length=1, description="Declared feature flag controlling it.")
+    role: FeatureRole = Field(
+        default=FeatureRole.IMPLEMENTATION_GUARD,
+        description="Declared role of the feature flag for this implementation.",
+    )
+    is_replacement: StrictBool = Field(
+        default=False,
+        description="Whether this implementation is a candidate replacement.",
+    )
+    fallback_behavior: str | None = Field(
+        default=None,
+        description="Declared behavior when the controlling flag is disabled.",
+    )
+
+
 class RouteFlagEntry(KillswitchModel):
     """Single route-to-flag declaration inside ``config/route_flag_map.json``."""
 
-    route: str = Field(min_length=1, description="HTTP route path.")
-    component: str = Field(min_length=1, description="Owning application component.")
+    route: str = Field(min_length=1, description="Canonical HTTP route path.")
+    route_aliases: list[str] = Field(
+        default_factory=list,
+        description="Explicitly declared route aliases resolving to this canonical route.",
+    )
+    route_variants: list[str] = Field(
+        default_factory=list,
+        description="Explicitly declared route path variants (e.g. trailing slash).",
+    )
+    http_methods: list[str] = Field(
+        default_factory=list,
+        description="Supported HTTP methods for this route, when known.",
+    )
+    component: str = Field(min_length=1, description="Owning logical application component.")
+    component_aliases: list[str] = Field(
+        default_factory=list,
+        description="Explicitly declared component aliases (e.g. security contract names).",
+    )
     flags: list[str] = Field(
         default_factory=list, description="Declared feature flags guarding this route."
+    )
+    implementation_bindings: list[ImplementationBinding] = Field(
+        default_factory=list,
+        description="Explicit implementation-to-flag bindings for disambiguation.",
+    )
+    feature_roles: dict[str, FeatureRole] = Field(
+        default_factory=dict,
+        description="Optional per-flag role map within this route entry.",
+    )
+    shared_dependencies: list[str] = Field(
+        default_factory=list,
+        description="Declared shared feature dependencies affecting this route.",
     )
     fallback_route: str | None = Field(
         default=None, description="Safe fallback route or behavior when flag is disabled."
@@ -1928,6 +1980,10 @@ class RouteFlagEntry(KillswitchModel):
     coverage_status: CoverageStatus = Field(description="Declared flag protection status.")
     deployment_assumptions: list[str] = Field(
         default_factory=list, description="Explicit fixture assumptions about deployment."
+    )
+    evidence_ids: list[IdentifierStr] = Field(
+        default_factory=list,
+        description="Optional evidence references supporting this declaration.",
     )
     is_fixture_assumption: StrictBool = Field(
         default=True, description="Marks unverified fixture declarations."
@@ -1937,8 +1993,21 @@ class RouteFlagEntry(KillswitchModel):
 class RouteFlagRegistry(KillswitchModel):
     """Schema for ``config/route_flag_map.json``."""
 
+    schema_version: str = Field(default="1.0", min_length=1, description="Registry schema version.")
     registry_version: str = Field(min_length=1, description="Registry version string.")
     environment: str = Field(min_length=1, description="Target demonstration environment.")
+    registry_fingerprint: str | None = Field(
+        default=None,
+        description="Optional SHA-256 content fingerprint of the registry.",
+    )
+    application_revision: str | None = Field(
+        default=None,
+        description="Application source-tree revision bound to this registry, if known.",
+    )
+    git_commit_sha: str | None = Field(
+        default=None,
+        description="Git commit SHA associated with this registry, if known.",
+    )
     declared_features: list[str] = Field(
         min_length=1, description="Declared feature flags recognized by this environment."
     )

@@ -1,7 +1,7 @@
 # Killswitch X (Veto-Switch)
 
 > [!NOTE]
-> **Status: Project is currently being built (Phases 01–03 of 12 implemented; remaining phases under active development).**
+> **Status: Project is currently being built (Phases 01–04 of 12 implemented; remaining phases under active development).**
 
 **AI-assisted, evidence-driven cybersecurity incident containment, remediation, and recovery platform.**
 

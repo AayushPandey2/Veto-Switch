@@ -22,6 +22,9 @@ from shared.schemas import (
     RouteFlagRegistry,
 )
 
+from agent_core.mapping.registry import IndexedRouteRegistry
+from agent_core.mapping.resolvers import compute_authoritative_candidates
+
 
 def validate_investigation_output(
     summary: InvestigationSummary,
@@ -80,6 +83,9 @@ def validate_mapping_output(
     *,
     finding: Finding,
     registry: RouteFlagRegistry,
+    require_actionable: bool = True,
+    expected_environment: str | None = None,
+    expected_revision: str | None = None,
 ) -> MappingResult:
     """Validate an injected FeatureMapperAgent result against the authoritative registry."""
     if mapping.finding_id != finding.finding_id:
@@ -95,21 +101,68 @@ def validate_mapping_output(
                 "actual": mapping.registry_version,
             },
         )
+    if expected_environment and registry.environment != expected_environment:
+        raise ContractValidationError(
+            "Registry environment does not match expected environment.",
+            context={"expected": expected_environment, "actual": registry.environment},
+        )
+    if (
+        expected_revision
+        and registry.application_revision
+        and registry.application_revision != expected_revision
+    ):
+        raise ContractValidationError(
+            "Registry application_revision does not match expected revision.",
+            context={"expected": expected_revision, "actual": registry.application_revision},
+        )
     if mapping.mapping_status == MappingStatus.AMBIGUOUS:
-        raise AmbiguousMappingError(
-            "MappingResult is ambiguous and requires human disambiguation.",
-            context={"candidate_flags": mapping.candidate_flags},
-        )
+        if require_actionable:
+            raise AmbiguousMappingError(
+                "MappingResult is ambiguous and requires human disambiguation.",
+                context={"candidate_flags": mapping.candidate_flags},
+            )
+        return mapping
     if mapping.mapping_status == MappingStatus.UNMAPPED or not mapping.selected_flag:
-        raise UnknownFeatureError(
-            "Finding could not be mapped to any declared feature flag.",
-            context={"affected_route": mapping.affected_route},
-        )
+        if require_actionable:
+            raise UnknownFeatureError(
+                "Finding could not be mapped to any declared feature flag.",
+                context={"affected_route": mapping.affected_route},
+            )
+        return mapping
     if mapping.selected_flag not in registry.declared_features:
         raise UnknownFeatureError(
             f"Mapped flag {mapping.selected_flag!r} is not declared in active registry.",
             context={"selected_flag": mapping.selected_flag},
         )
+
+    indexed = IndexedRouteRegistry(registry)
+    authoritative_candidates = compute_authoritative_candidates(
+        indexed,
+        route=mapping.affected_route or finding.affected_route,
+        component=mapping.matched_component or finding.affected_component,
+    )
+    if mapping.selected_flag not in authoritative_candidates:
+        raise ContractValidationError(
+            f"Selected flag {mapping.selected_flag!r} is not semantically bound to "
+            f"route={mapping.affected_route or finding.affected_route!r} / "
+            f"component={mapping.matched_component or finding.affected_component!r}.",
+            context={
+                "selected_flag": mapping.selected_flag,
+                "authoritative_candidates": authoritative_candidates,
+            },
+        )
+    if require_actionable and mapping.manual_review_required:
+        raise ContractValidationError(
+            "Actionable mapping cannot proceed while manual_review_required=True.",
+            context={"selected_flag": mapping.selected_flag},
+        )
+    if require_actionable and mapping.diagnostics is not None:
+        eligibility = mapping.diagnostics.get("action_eligibility")
+        if eligibility in {"hold", "blocked"}:
+            raise ContractValidationError(
+                f"Mapping action_eligibility={eligibility!r} blocks containment progression.",
+                context={"selected_flag": mapping.selected_flag, "action_eligibility": eligibility},
+            )
     return mapping
 
 

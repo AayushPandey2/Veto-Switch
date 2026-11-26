@@ -1,6 +1,8 @@
 {
+  "schema_version": "1.0",
   "registry_version": "1.0.0-demo",
   "environment": "demo-staging",
+  "application_revision": "demo-rev-0000demo",
   "declared_features": [
     "search_v1",
     "search_v2",
@@ -16,8 +18,32 @@
   "routes": [
     {
       "route": "/search",
+      "route_aliases": ["/legacy/search"],
+      "route_variants": ["/search/"],
+      "http_methods": ["GET"],
       "component": "search_service",
+      "component_aliases": ["search_v1", "search_v2"],
       "flags": ["search_v1", "search_v2"],
+      "implementation_bindings": [
+        {
+          "implementation_id": "search_v1",
+          "flag_name": "search_v1",
+          "role": "implementation_guard",
+          "is_replacement": false,
+          "fallback_behavior": "503 search_disabled when search_v2 is also disabled"
+        },
+        {
+          "implementation_id": "search_v2",
+          "flag_name": "search_v2",
+          "role": "replacement_guard",
+          "is_replacement": true,
+          "fallback_behavior": "Parameterized search implementation if deployed and enabled"
+        }
+      ],
+      "feature_roles": {
+        "search_v1": "implementation_guard",
+        "search_v2": "replacement_guard"
+      },
       "fallback_route": "/health",
       "coverage_status": "protected",
       "deployment_assumptions": [
@@ -27,8 +53,24 @@
     },
     {
       "route": "/files",
+      "route_aliases": [],
+      "route_variants": ["/files/"],
+      "http_methods": ["GET"],
       "component": "file_service",
+      "component_aliases": ["files_v1"],
       "flags": ["files_v1"],
+      "implementation_bindings": [
+        {
+          "implementation_id": "files_v1",
+          "flag_name": "files_v1",
+          "role": "implementation_guard",
+          "is_replacement": false,
+          "fallback_behavior": "503 files_disabled"
+        }
+      ],
+      "feature_roles": {
+        "files_v1": "implementation_guard"
+      },
       "fallback_route": "/health",
       "coverage_status": "protected",
       "deployment_assumptions": [

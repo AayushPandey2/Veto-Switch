@@ -2,7 +2,7 @@ name: Killswitch X Foundation CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, Feature]
   pull_request:
 
 jobs:
@@ -39,6 +39,12 @@ jobs:
 
       - name: Run offline AI evaluation regression check
         run: python -m agent_core.evaluations.regression
+
+      - name: Run offline Phase 04 mapping demonstrations
+        run: python -m agent_core.demos.mapping_demos
+
+      - name: Run offline Phase 04 mapping evaluation check
+        run: python -m agent_core.evaluations.mapping_evaluator
 
       - name: Run unit, contract, and orchestration tests (offline)
         run: pytest -v

@@ -1,0 +1,217 @@
+{
+  "dataset_version": "1.0.0",
+  "description": "Deterministic labeled test cases for Phase 04 Vulnerability-to-Feature-Flag Mapping evaluation.",
+  "cases": [
+    {
+      "case_id": "map_01_search_sqli_verified",
+      "category": "exact_mapping",
+      "route": "/search",
+      "component": "search_service",
+      "observed_implementation": "search_v1",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5},
+        {"feature_name": "search_v2", "enabled": false, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "search_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_02_files_traversal",
+      "category": "exact_mapping",
+      "route": "/files",
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "files_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_03_legacy_search_alias",
+      "category": "alias_resolution",
+      "route": "/legacy/search",
+      "component": "search_service",
+      "observed_implementation": "search_v1",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "search_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_04_search_trailing_slash_variant",
+      "category": "alias_resolution",
+      "route": "/search/",
+      "component": "search_service",
+      "observed_implementation": "search_v1",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "search_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_05_component_alias_files_v1",
+      "category": "component_resolution",
+      "route": "/files",
+      "component": "files_v1",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "files_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_06_component_only_unambiguous",
+      "category": "component_resolution",
+      "route": null,
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "files_v1",
+      "expected_eligibility": "eligible"
+    },
+    {
+      "case_id": "map_07_ambiguous_multi_flag_no_impl",
+      "category": "ambiguity_recognition",
+      "route": "/search",
+      "component": "search_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "search_v1", "enabled": true, "status": "observed", "age_seconds": 5},
+        {"feature_name": "search_v2", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "ambiguous",
+      "expected_flag": null,
+      "expected_eligibility": "blocked"
+    },
+    {
+      "case_id": "map_08_unknown_route",
+      "category": "unknown_route_rejection",
+      "route": "/searching",
+      "component": "search_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [],
+      "expected_status": "unmapped",
+      "expected_flag": null,
+      "expected_eligibility": "blocked"
+    },
+    {
+      "case_id": "map_09_environment_mismatch",
+      "category": "environment_mismatch",
+      "route": "/files",
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "production",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [],
+      "expected_status": "unmapped",
+      "expected_flag": null,
+      "expected_eligibility": "blocked"
+    },
+    {
+      "case_id": "map_10_stale_feature_state",
+      "category": "stale_state_detection",
+      "route": "/files",
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 3600}
+      ],
+      "expected_status": "matched",
+      "expected_flag": "files_v1",
+      "expected_eligibility": "hold"
+    },
+    {
+      "case_id": "map_11_revision_mismatch",
+      "category": "revision_mismatch",
+      "route": "/files",
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": true,
+      "environment": "demo-staging",
+      "application_revision": "different-rev-999",
+      "feature_states": [
+        {"feature_name": "files_v1", "enabled": true, "status": "observed", "age_seconds": 5}
+      ],
+      "expected_status": "unmapped",
+      "expected_flag": null,
+      "expected_eligibility": "blocked"
+    },
+    {
+      "case_id": "map_12_fixture_evidence_in_live_mode",
+      "category": "provenance_separation",
+      "route": "/files",
+      "component": "file_service",
+      "finding_status": "reproduced",
+      "provenance": "reference_fixture",
+      "fixture_mode": false,
+      "environment": "demo-staging",
+      "application_revision": "demo-rev-0000demo",
+      "feature_states": [
+        {
+          "feature_name": "files_v1",
+          "enabled": true,
+          "status": "observed",
+          "age_seconds": 5,
+          "provenance": "actual_observed"
+        }
+      ],
+      "expected_status": "matched",
+      "expected_flag": "files_v1",
+      "expected_eligibility": "blocked"
+    }
+  ]
+}
