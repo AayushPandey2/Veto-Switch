@@ -4,8 +4,9 @@ from flask import Flask, Response, jsonify, request
 
 from demo_app.config import DemoSettings
 from demo_app.database import initialize_database, seed_demo_data
-from demo_app.feature_flags import LocalFeatureFlagProvider
+from demo_app.feature_flags import FeatureFlagProvider
 from demo_app.file_service import read_public_demo_file
+from demo_app.manifest import DEMO_ONLY_ROUTES, ROUTE_MANIFEST
 from demo_app.search_service import search_documents
 from demo_app.vulnerable_file_service import (
     vulnerable_read_demo_file_for_demo,
@@ -56,9 +57,12 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
     app = Flask(__name__)
     app.config["DEMO_SETTINGS"] = settings
 
-    app.extensions["feature_flags"] = LocalFeatureFlagProvider(
+    app.extensions["feature_flags"] = FeatureFlagProvider(
         demo_mode=settings.demo_mode,
         allow_vulnerable_routes=settings.allow_vulnerable_routes,
+        database_path=settings.database_path,
+        adapter=settings.flag_adapter,
+        flagsmith_environment_key=settings.flagsmith_environment_key,
     )
 
     initialize_database(settings.database_path)
@@ -72,6 +76,8 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 "status": "healthy",
                 "service": "veto-switch-demo",
                 "environment": settings.environment,
+                "data_label": "DEMO / SYNTHETIC DATA",
+                "flag_adapter": settings.flag_adapter,
             }
         )
 
@@ -80,18 +86,35 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
         """Represent an unrelated healthy route during search containment."""
         return jsonify({"status": "operational", "service": "veto-switch-demo"})
 
+    @app.get("/manifest")
+    def manifest():
+        """Publish stable route-to-flag metadata for coverage and demo use."""
+        return jsonify(
+            {
+                "data_label": "DEMO / SYNTHETIC DATA",
+                "routes": ROUTE_MANIFEST,
+                "demo_only_routes": DEMO_ONLY_ROUTES,
+                "graph": [
+                    {"route": route["path"], "flag": flag}
+                    for route in ROUTE_MANIFEST
+                    for flag in route["flags"]
+                ],
+            }
+        )
+
     @app.get("/search")
     def search():
         query = _validate_search_query()
         if isinstance(query, Response):
             return query
 
-        feature_flags: LocalFeatureFlagProvider = app.extensions["feature_flags"]
+        feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
         if feature_flags.is_enabled("search_v2"):
             results = search_documents(
                 app.extensions["database_path"],
                 query,
             )
+            app.logger.info("route=/search variant=search_v2 outcome=success")
             return jsonify(
                 {
                     "variant": "search_v2",
@@ -105,6 +128,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 app.extensions["database_path"],
                 query,
             )
+            app.logger.info("route=/search variant=search_v1 outcome=demo_vulnerable")
             return jsonify(
                 {
                     "variant": "search_v1",
@@ -118,6 +142,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             app.extensions["database_path"],
             query,
         )
+        app.logger.info("route=/search variant=safe_fallback outcome=success")
         return jsonify(
             {
                 "variant": "safe_fallback",
@@ -129,7 +154,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
     @app.get("/demo/search-v1")
     def vulnerable_search_demo():
         """Expose the unsafe search only behind all explicit local demo gates."""
-        feature_flags: LocalFeatureFlagProvider = app.extensions["feature_flags"]
+        feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
         if not feature_flags.is_enabled("search_v1") or feature_flags.is_enabled(
             "search_v2"
         ):
@@ -143,6 +168,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             app.extensions["database_path"],
             query,
         )
+        app.logger.info("route=/demo/search-v1 variant=search_v1 outcome=demo_vulnerable")
         return jsonify(
             {
                 "warning": "Intentionally vulnerable local demonstration endpoint.",
@@ -157,7 +183,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
         if isinstance(file_path, Response):
             return file_path
 
-        feature_flags: LocalFeatureFlagProvider = app.extensions["feature_flags"]
+        feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
         if feature_flags.is_enabled("files_v2"):
             variant = "files_v2"
             content = read_public_demo_file(file_path)
@@ -169,6 +195,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             content = read_public_demo_file(file_path)
 
         if content is None:
+            app.logger.info("route=/files variant=unknown outcome=not_found")
             return jsonify({"error": "File not found."}), 404
 
         payload = {
@@ -179,12 +206,14 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
         if variant == "files_v1":
             payload["warning"] = "Intentionally vulnerable local demonstration."
 
+        app.logger.info("route=/files variant=%s outcome=success", variant)
+
         return jsonify(payload)
 
     @app.get("/demo/files-v1")
     def vulnerable_file_demo():
         """Expose path traversal only against predefined synthetic demo files."""
-        feature_flags: LocalFeatureFlagProvider = app.extensions["feature_flags"]
+        feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
         if not feature_flags.is_enabled("files_v1") or feature_flags.is_enabled(
             "files_v2"
         ):
@@ -196,8 +225,10 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
 
         content = vulnerable_read_demo_file_for_demo(file_path)
         if content is None:
+            app.logger.info("route=/demo/files-v1 variant=files_v1 outcome=not_found")
             return jsonify({"error": "File not found."}), 404
 
+        app.logger.info("route=/demo/files-v1 variant=files_v1 outcome=demo_vulnerable")
         return jsonify(
             {
                 "warning": "Synthetic path traversal demonstration; no disk files are read.",

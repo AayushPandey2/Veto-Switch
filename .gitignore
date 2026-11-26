@@ -1,9 +1,16 @@
 .venv/
+node_modules/
+**/node_modules/
+dist/
+platform/frontend/dist/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.env
+.env.*
+!.env.example
 artifacts/
 platform/artifacts/

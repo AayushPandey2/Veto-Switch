@@ -3,6 +3,7 @@
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 DEMO_USERS = [
@@ -58,7 +59,52 @@ def initialize_database(database_path: Path) -> None:
                 FOREIGN KEY (owner_id) REFERENCES users(id),
                 UNIQUE (owner_id, filename)
             );
+
+            CREATE TABLE IF NOT EXISTS demo_feature_flags (
+                flag_name TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                updated_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
+        )
+
+
+def get_demo_flag_override(database_path: Path, flag_name: str) -> bool | None:
+    """Read an explicit local API override, if one has been recorded."""
+    with get_connection(database_path) as connection:
+        row = connection.execute(
+            "SELECT enabled FROM demo_feature_flags WHERE flag_name = ?",
+            (flag_name,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return bool(row["enabled"])
+
+
+def set_demo_flag_overrides(
+    database_path: Path,
+    values: dict[str, bool],
+    *,
+    actor: str,
+) -> None:
+    """Persist local demo flag states with a timestamp and operator label."""
+    updated_at = datetime.now(UTC).isoformat()
+    with get_connection(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO demo_feature_flags (flag_name, enabled, updated_by, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(flag_name) DO UPDATE SET
+                enabled = excluded.enabled,
+                updated_by = excluded.updated_by,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (flag_name, int(enabled), actor, updated_at)
+                for flag_name, enabled in values.items()
+            ],
         )
 
 
