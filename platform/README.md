@@ -73,6 +73,7 @@ The local SQLite mode is available without Flagsmith credentials. The real Flags
 ## What works now and what still needs setup
 
 - The local dashboard flow supports creating and analyzing synthetic findings, recording an approval or rejection, applying an approved local flag change, verifying the running demo app, viewing the persisted timeline, and exporting a JSON report.
+- The incident view compares the prepared change with safe-fallback and hold choices, and names affected and unrelated routes using the local route manifest. It does not estimate production customer impact.
 - The local SQLite flag adapter is configured by default. The local approval and verification flow has been run successfully with Docker Compose.
 - A Flagsmith management adapter and server-side evaluation path are present, but real Flagsmith changes have **not** been verified. The private `.env` currently needs a dedicated Flagsmith environment key and management token before that path can be used. Never paste those credentials into chat or commit them.
 - The stage selector is a preview only: staged percentage targeting is not applied to Flagsmith. The patch option displays a read-only unified diff between the safe and vulnerable demo source files; its test status is explicitly `Not run`, and no code is deployed. Rollback execution is not implemented.
