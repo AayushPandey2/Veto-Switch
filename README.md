@@ -2,10 +2,10 @@
 
 ## Standalone platform demo
 
-The platform demo runs the synthetic Flask app and operator API on your machine. Copy `.env.example` to `.env`, then start both services from the repository root:
+The platform demo runs the synthetic Flask app, operator API, and React dashboard on your machine. If you do not already have a `.env` file, copy `.env.example` to `.env`. Then start the services from the repository root:
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 docker compose up --build
 ```
 
