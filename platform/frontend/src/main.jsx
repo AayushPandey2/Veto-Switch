@@ -312,6 +312,7 @@ function App() {
                       <div className="incident-meta"><span>INCIDENT ID</span><code>{detail.id}</code><button className="text-button" onClick={() => navigator.clipboard?.writeText(detail.id)}>Copy</button></div>
                       <p className="evidence-copy">{detail.evidence_summary}</p>
                       {preChangeCheck && <div className={`precheck-card precheck-${preChangeCheck.status}`}><div className="precheck-head"><span>BEFORE CHANGE</span><b>{preChangeCheck.status === "vulnerability_observed" ? "Attack reproduced" : preChangeCheck.status === "attack_not_observed" ? "Attack not observed" : "Observation unknown"}</b></div><small>{preChangeCheck.route || "Demo route"} · {preChangeCheck.variant || "no variant observed"} · {formatTime(preChangeCheck.observed_at)}</small>{preChangeCheck.checks && <div className="check-list">{Object.entries(preChangeCheck.checks).map(([name, passed]) => { const issue = name.includes("returned_synthetic") ? passed : !passed; return <div key={name}><span className={issue ? "check-fail" : "check-pass"}>{issue ? "!" : "✓"}</span>{humanize(name)}</div>; })}</div>}</div>}
+                      <ImpactComparison incident={detail} routes={coverage?.routes || []} preChangeCheck={preChangeCheck} />
                       <div className="flow-steps">
                         {[{ id: "finding", label: "Finding" }, { id: "approval", label: "Approval" }, { id: "change", label: "Flag change" }, { id: "verify", label: "Verify" }].map((step, index) => <div className={`flow-step ${stepState(step.id)}`} key={step.id}><span className="step-node">{stepState(step.id) === "done" ? "✓" : `0${index + 1}`}</span><span>{step.label}</span></div>)}
                       </div>
@@ -347,6 +348,36 @@ function App() {
 
 function MetricCard({ label, value, note, accent, compact }) {
   return <div className={`metric-card metric-${accent}`}><span>{label}</span><strong className={compact ? "metric-compact" : ""}>{value}</strong><small>{note}</small></div>;
+}
+
+function ImpactComparison({ incident, routes, preChangeCheck }) {
+  const scenarios = {
+    search_sqli: { path: "/search", vulnerableFlag: "search_v1", safeFlag: "search_v2" },
+    path_traversal: { path: "/files", vulnerableFlag: "files_v1", safeFlag: "files_v2" },
+  };
+  const scenario = scenarios[incident.scenario];
+  if (!scenario) return null;
+
+  const route = routes.find((item) => item.path === scenario.path);
+  const unrelatedRoutes = routes.filter(
+    (item) => !(item.flags || []).includes(scenario.vulnerableFlag)
+      && !(item.flags || []).includes(scenario.safeFlag),
+  );
+  const vulnerableState = route?.flag_states?.[scenario.vulnerableFlag] || "unknown";
+  const safeState = route?.flag_states?.[scenario.safeFlag] || "unknown";
+
+  return (
+    <section className="impact-panel" aria-label="Containment impact comparison">
+      <div className="impact-heading"><div><span className="section-kicker">BLAST RADIUS · LOCAL DEMO</span><h3>Containment impact</h3></div><span className="impact-readonly">Comparison only</span></div>
+      <div className="impact-route"><div><span>AFFECTED ROUTE</span><code>{scenario.path}</code></div><div><span>FLAG STATES NOW</span><code>{scenario.vulnerableFlag}: {humanize(vulnerableState)} · {scenario.safeFlag}: {humanize(safeState)}</code></div></div>
+      <div className="impact-options">
+        <article className="impact-option impact-recommended"><span>PREPARED PROPOSAL</span><b>{incident.proposal ? `${incident.proposal.vulnerable_flag} off → ${incident.proposal.safe_flag} on` : `${scenario.vulnerableFlag} off → ${scenario.safeFlag} on`}</b><p>Uses the safe implementation and keeps this route available. {preChangeCheck?.status === "vulnerability_observed" ? "The before-change check reproduced the issue." : ""}</p></article>
+        <article className="impact-option"><span>SAFE FALLBACK</span><b>{scenario.vulnerableFlag} off</b><p>The demo route uses its safe fallback if the safe-variant flag is not enabled. This is not a separate prepared approval.</p></article>
+        <article className="impact-option"><span>HOLD</span><b>Leave flags unchanged</b><p>No change is applied; the vulnerable variant remains available when its flag is enabled.</p></article>
+      </div>
+      <div className="impact-footer"><span>Unaffected routes</span><b>{unrelatedRoutes.length ? unrelatedRoutes.map((item) => item.path).join(", ") : "None identified"}</b><small>Local code evidence only. No production traffic or customer cohort counts are connected.</small></div>
+    </section>
+  );
 }
 
 function CoverageView({ coverage, counts }) {
