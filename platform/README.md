@@ -75,7 +75,7 @@ The local SQLite mode is available without Flagsmith credentials. The real Flags
 - The local dashboard flow supports creating and analyzing synthetic findings, recording an approval or rejection, applying an approved local flag change, verifying the running demo app, viewing the persisted timeline, and exporting a JSON report.
 - The local SQLite flag adapter is configured by default. The local approval and verification flow has been run successfully with Docker Compose.
 - A Flagsmith management adapter and server-side evaluation path are present, but real Flagsmith changes have **not** been verified. The private `.env` currently needs a dedicated Flagsmith environment key and management token before that path can be used. Never paste those credentials into chat or commit them.
-- The stage selector is a preview only: staged percentage targeting is not applied to Flagsmith. The patch action records an advisory event; it does not display a real code diff, run a patch test, or deploy code. Rollback execution is not implemented.
+- The stage selector is a preview only: staged percentage targeting is not applied to Flagsmith. The patch option displays a read-only unified diff between the safe and vulnerable demo source files; its test status is explicitly `Not run`, and no code is deployed. Rollback execution is not implemented.
 - Production authentication, real cohort telemetry, and the remaining recovery and advisory screens are still future work.
 
 The UI shows the local adapter and labels the environment as local. Treat a green verification result as evidence from the local synthetic demo only, not as proof of a real Flagsmith deployment.
