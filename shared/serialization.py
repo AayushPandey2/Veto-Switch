@@ -16,7 +16,10 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from shared.constants import CANONICAL_PROPOSAL_HASH_FIELDS
+from shared.constants import (
+    CANONICAL_PROPOSAL_HASH_FIELDS,
+    CANONICAL_ROLLBACK_PROPOSAL_HASH_FIELDS,
+)
 from shared.exceptions import ContractValidationError
 from shared.identifiers import format_utc_iso
 
@@ -91,6 +94,24 @@ def compute_proposal_hash(proposal_fields: Mapping[str, Any]) -> str:
             context={"missing_fields": missing},
         )
     canonical_payload = {field: proposal_fields[field] for field in CANONICAL_PROPOSAL_HASH_FIELDS}
+    return sha256_canonical(canonical_payload)
+
+
+def compute_rollback_proposal_hash(proposal_fields: Mapping[str, Any]) -> str:
+    """Compute canonical SHA-256 hash over all review-relevant RollbackProposal fields.
+
+    Raises:
+        ContractValidationError: If any canonical rollback proposal field is missing.
+    """
+    missing = [f for f in CANONICAL_ROLLBACK_PROPOSAL_HASH_FIELDS if f not in proposal_fields]
+    if missing:
+        raise ContractValidationError(
+            "Missing required fields for canonical rollback proposal hash computation.",
+            context={"missing_fields": missing},
+        )
+    canonical_payload = {
+        field: proposal_fields[field] for field in CANONICAL_ROLLBACK_PROPOSAL_HASH_FIELDS
+    }
     return sha256_canonical(canonical_payload)
 
 

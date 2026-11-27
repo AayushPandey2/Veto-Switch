@@ -27,6 +27,7 @@ from shared.constants import (
     DEFAULT_LLM_MAX_RETRIES,
     DEFAULT_LLM_TIMEOUT_SECONDS,
     DEFAULT_PROPOSAL_EXPIRATION_SECONDS,
+    DEFAULT_ROLLBACK_POLICY_PATH,
     DEFAULT_ROLLOUT_POLICY_PATH,
     DEFAULT_ROUTE_REGISTRY_PATH,
 )
@@ -34,6 +35,7 @@ from shared.exceptions import ConfigurationError
 from shared.schemas import (
     ContainmentPolicyConfig,
     DependencyGraph,
+    RollbackPolicyConfig,
     RolloutPolicyConfig,
     RouteFlagRegistry,
 )
@@ -229,5 +231,19 @@ def load_containment_policy(
     except Exception as exc:
         raise ConfigurationError(
             "ContainmentPolicyConfig failed schema validation.",
+            context={"path": str(path), "reason": str(exc)},
+        ) from exc
+
+
+def load_rollback_policy(
+    path: Path | str = DEFAULT_ROLLBACK_POLICY_PATH,
+) -> RollbackPolicyConfig:
+    """Load and validate ``config/rollback_policy.json``."""
+    raw = _load_json_file(Path(path))
+    try:
+        return RollbackPolicyConfig.model_validate(raw)
+    except Exception as exc:
+        raise ConfigurationError(
+            "RollbackPolicyConfig failed schema validation.",
             context={"path": str(path), "reason": str(exc)},
         ) from exc

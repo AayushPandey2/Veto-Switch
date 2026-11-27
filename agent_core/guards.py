@@ -578,7 +578,20 @@ def _run_approval_checks(
     validator = context.approval_validator or ApprovalValidator(
         clock=context.clock, route_registry=context.route_registry
     )
-    if event.event_type in (EventType.ROLLOUT_STAGE_APPROVED, EventType.ROLLBACK_APPROVED):
+    if event.event_type == EventType.ROLLBACK_APPROVED:
+        approval = context.stage_approval_decision or context.approval_decision
+        return [
+            validator.validate_rollback_approval(
+                incident=incident,
+                proposal=context.rollback_proposal,
+                approval=approval,
+                producer=context.producer_context,
+                feature_state=context.feature_state,
+                consumed_approval_ids=context.consumed_approval_ids,
+            )
+        ]
+
+    if event.event_type == EventType.ROLLOUT_STAGE_APPROVED:
         approval = context.stage_approval_decision or context.approval_decision
         stage_id = incident.current_rollout_stage or (
             approval.proposal_id if approval is not None else ""
@@ -742,6 +755,33 @@ def guard_containment_verification(
     incident: IncidentAggregate, event: IncidentEvent, context: TransitionContext
 ) -> GuardResult:
     """15. Verify post-containment security regression + functional smoke + state readback."""
+    if event.event_type == EventType.ROLLBACK_VERIFICATION_PASSED:
+        if incident.current_approval_id is None:
+            return _fail(
+                "containment_verification",
+                "MISSING_ROLLBACK_APPROVAL",
+                "ROLLBACK_VERIFICATION_PASSED requires a recorded human rollback approval.",
+                missing=["rollback_approval"],
+            )
+        if incident.active_operation_id is None:
+            return _fail(
+                "containment_verification",
+                "MISSING_ROLLBACK_RECEIPT",
+                "ROLLBACK_VERIFICATION_PASSED requires a validated rollback execution receipt.",
+                missing=["rollback_operation_receipt"],
+            )
+        rb = context.rollback_proposal
+        if (
+            rb is not None
+            and rb.targeting_action is not None
+            and getattr(rb.targeting_action, "desired_exposure", 0) > 0
+        ):
+            return _fail(
+                "containment_verification",
+                "PARTIAL_ROLLBACK_NOT_CONTAINED",
+                "Partial exposure reduction cannot transition to CONTAINED; use ROLLOUT_HOLD.",
+                missing=["full_containment_configuration"],
+            )
     vr = context.verification_result
     if vr is None:
         return _fail(
@@ -1023,7 +1063,7 @@ def guard_recovery_completion(
 def guard_rollback_safety(
     incident: IncidentAggregate, event: IncidentEvent, context: TransitionContext
 ) -> GuardResult:
-    """20. Verify RollbackProposal never blindly assumes legacy vulnerable state is safe."""
+    """20. Verify RollbackProposal identity, hash, legacy safety, and review boundaries."""
     rb = context.rollback_proposal
     if rb is None:
         return _fail(
@@ -1031,6 +1071,34 @@ def guard_rollback_safety(
             "MISSING_ROLLBACK_PROPOSAL",
             "RollbackProposal is required.",
             missing=["rollback_proposal"],
+        )
+    if rb.incident_id != incident.incident_id:
+        return _fail(
+            "rollback_safety",
+            "ROLLBACK_INCIDENT_MISMATCH",
+            "RollbackProposal belongs to another incident.",
+            missing=["matching_incident_rollback"],
+        )
+    if rb.target_environment != incident.environment:
+        return _fail(
+            "rollback_safety",
+            "ROLLBACK_ENVIRONMENT_MISMATCH",
+            "RollbackProposal target_environment does not match incident environment.",
+            missing=["matching_environment_rollback"],
+        )
+    if rb.target_feature == "search_v1" and rb.proposed_state is True:
+        return _fail(
+            "rollback_safety",
+            "LEGACY_VULNERABLE_PATH_EXPOSED",
+            "RollbackProposal cannot re-enable known vulnerable search_v1.",
+            missing=["safe_rollback_target"],
+        )
+    if rb.proposal_hash != rb.compute_canonical_hash():
+        return _fail(
+            "rollback_safety",
+            "PROPOSAL_HASH_MISMATCH",
+            "RollbackProposal canonical hash verification failed.",
+            missing=["valid_rollback_proposal_hash"],
         )
     if not rb.approval_required:
         return _fail(
@@ -1049,7 +1117,7 @@ def guard_rollback_safety(
     return _ok(
         "rollback_safety",
         "ROLLBACK_PROPOSAL_VALID",
-        "Rollback proposal safety and review boundaries verified.",
+        "Rollback proposal safety, hash, and review boundaries verified.",
         evidence_ids=list(rb.triggering_evidence_ids),
     )
 

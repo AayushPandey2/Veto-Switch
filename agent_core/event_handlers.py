@@ -225,6 +225,11 @@ class RollbackApprovedHandler:
         if approval is None or rb is None:
             return []
         is_fixture = _is_fixture(updated_incident, context)
+        action_payload = (
+            rb.targeting_action.model_dump(mode="json")
+            if rb.targeting_action is not None
+            else {"action_type": rb.action_type.value, "desired_enabled": rb.proposed_state}
+        )
         idem_key = build_operation_idempotency_key(
             incident_id=updated_incident.incident_id,
             proposal_id=rb.proposal_id,
@@ -241,13 +246,21 @@ class RollbackApprovedHandler:
                 incident_id=updated_incident.incident_id,
                 proposal_id=rb.proposal_id,
                 approval_id=approval.approval_id,
+                operation_id=updated_incident.active_operation_id,
                 idempotency_key=idem_key,
                 environment=rb.target_environment,
                 target_feature=rb.target_feature,
                 desired_enabled=rb.proposed_state,
                 executable_live=not is_fixture,
                 is_synthetic_fixture=is_fixture,
-                metadata={"rollback_proposal_id": rb.proposal_id},
+                metadata={
+                    "rollback_proposal_id": rb.proposal_id,
+                    "proposal_hash": rb.proposal_hash,
+                    "action_type": rb.action_type.value,
+                    "expected_current_state": rb.current_state,
+                    "expected_targeting_version": rb.expected_targeting_version,
+                    "targeting_action": action_payload,
+                },
             )
         ]
 

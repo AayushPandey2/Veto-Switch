@@ -8,6 +8,7 @@ from shared.schemas import (
     ApprovalDecision,
     ContainmentProposal,
     FeatureState,
+    RollbackProposal,
     RouteFlagRegistry,
 )
 from shared.validation import validate_approval_for_proposal
@@ -357,4 +358,128 @@ class ApprovalValidator:
             guard="approval_validity",
             reason_code="STAGE_APPROVAL_VERIFIED",
             message=f"Stage/rollback approval {approval.approval_id!r} verified.",
+        )
+
+    def validate_rollback_approval(
+        self,
+        *,
+        incident: IncidentAggregate,
+        proposal: RollbackProposal | None,
+        approval: ApprovalDecision | None,
+        producer: ProducerContext,
+        feature_state: FeatureState | None = None,
+        consumed_approval_ids: set[str] | None = None,
+    ) -> GuardResult:
+        """Validate authenticated human approval bound to exact RollbackProposal hash."""
+        now = self._clock.now()
+        if not producer.authenticated or producer.actor_type != ActorType.HUMAN_OPERATOR:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="UNAUTHENTICATED_OR_NON_HUMAN_APPROVER",
+                message="Rollback approval requires authenticated HUMAN_OPERATOR producer.",
+                missing_requirements=["authenticated_human_operator"],
+            )
+        if proposal is None:
+            return GuardResult(
+                allowed=False,
+                guard="proposal_integrity",
+                reason_code="MISSING_ROLLBACK_PROPOSAL",
+                message="RollbackProposal is required for rollback approval.",
+                missing_requirements=["rollback_proposal"],
+            )
+        if approval is None:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="MISSING_ROLLBACK_APPROVAL",
+                message="Fresh human ApprovalDecision is required for rollback.",
+                missing_requirements=["rollback_approval_decision"],
+            )
+        if (
+            incident.current_proposal_id is not None
+            and proposal.proposal_id != incident.current_proposal_id
+        ) or proposal.proposal_id in incident.superseded_proposal_ids:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="SUPERSEDED_PROPOSAL",
+                message="Rollback approval references a superseded or inactive proposal.",
+                missing_requirements=["active_rollback_proposal"],
+            )
+        expected_hash = proposal.compute_canonical_hash()
+        if proposal.proposal_hash != expected_hash or approval.proposal_hash != expected_hash:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="PROPOSAL_HASH_MISMATCH",
+                message="Approval proposal_hash does not match canonical RollbackProposal hash.",
+                missing_requirements=["matching_rollback_proposal_hash"],
+            )
+        if (
+            approval.incident_id != incident.incident_id
+            or approval.proposal_id != proposal.proposal_id
+        ):
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="ROLLBACK_APPROVAL_TARGET_MISMATCH",
+                message="Approval incident_id or proposal_id does not match RollbackProposal.",
+                missing_requirements=["matching_rollback_proposal"],
+            )
+        if approval.decision != ApprovalStatus.APPROVED:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="APPROVAL_NOT_APPROVED",
+                message=f"Approval decision is {approval.decision.value!r}, not 'approved'.",
+                missing_requirements=["approved_decision"],
+            )
+        if approval.expires_at <= now or (
+            proposal.expires_at is not None and proposal.expires_at <= now
+        ):
+            return GuardResult(
+                allowed=False,
+                guard="approval_freshness",
+                reason_code="APPROVAL_EXPIRED",
+                message="Rollback approval or proposal has expired.",
+                missing_requirements=["fresh_rollback_approval"],
+            )
+        if approval.decided_at > now:
+            return GuardResult(
+                allowed=False,
+                guard="approval_freshness",
+                reason_code="FUTURE_APPROVAL_TIMESTAMP",
+                message="Approval timestamp is in the future.",
+                missing_requirements=["valid_approval_timestamp"],
+            )
+        all_consumed = set(incident.consumed_approval_ids)
+        if consumed_approval_ids:
+            all_consumed.update(consumed_approval_ids)
+        if approval.approval_id in all_consumed:
+            return GuardResult(
+                allowed=False,
+                guard="approval_validity",
+                reason_code="APPROVAL_ALREADY_CONSUMED",
+                message="Approval cannot be reused across distinct rollback proposals.",
+                missing_requirements=["fresh_unconsumed_approval"],
+            )
+        if (
+            feature_state is not None
+            and proposal.current_state is not None
+            and feature_state.observation_status == FeatureObservationStatus.OBSERVED
+            and feature_state.enabled != proposal.current_state
+        ):
+            return GuardResult(
+                allowed=False,
+                guard="feature_state_freshness",
+                reason_code="CURRENT_TARGETING_CONFLICT",
+                message="Observed feature state drifted before rollback approval.",
+                missing_requirements=["reconciled_rollback_proposal"],
+            )
+        return GuardResult(
+            allowed=True,
+            guard="approval_validity",
+            reason_code="ROLLBACK_APPROVAL_VERIFIED",
+            message=f"Rollback approval {approval.approval_id!r} verified against canonical hash.",
         )

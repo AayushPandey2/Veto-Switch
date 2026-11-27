@@ -67,6 +67,7 @@ from shared.enums import (
     PatchStatus,
     ProposalType,
     RedactionStatus,
+    RollbackActionType,
     RolloutDecisionType,
     TestExecutionStatus,
     VerificationPhase,
@@ -75,7 +76,11 @@ from shared.enums import (
 )
 from shared.exceptions import KillswitchError
 from shared.identifiers import utc_now
-from shared.serialization import compute_proposal_hash, sha256_canonical
+from shared.serialization import (
+    compute_proposal_hash,
+    compute_rollback_proposal_hash,
+    sha256_canonical,
+)
 from shared.validation import (
     validate_dependency_graph_integrity,
     validate_evidence_reference_ids,
@@ -1579,8 +1584,100 @@ class RolloutDecision(KillswitchModel):
 
 
 # ------------------------------------------------------------------------------
-# 10.18 RollbackProposal
+# 10.18 RollbackProposal & Typed Rollback Actions / VerifiedSafeState
 # ------------------------------------------------------------------------------
+class BooleanRollbackAction(KillswitchModel):
+    """Typed Boolean feature-flag rollback action."""
+
+    action_type: RollbackActionType = Field(default=RollbackActionType.BOOLEAN_STATE)
+    target_feature: str = Field(min_length=1)
+    environment: str = Field(min_length=1)
+    expected_current_enabled: StrictBool | None = None
+    desired_enabled: StrictBool
+
+    @model_validator(mode="after")
+    def _validate_boolean_kind(self) -> BooleanRollbackAction:
+        if self.action_type not in (
+            RollbackActionType.BOOLEAN_STATE,
+            RollbackActionType.SAFE_FALLBACK,
+        ):
+            raise ValueError(
+                "BooleanRollbackAction requires boolean_state or safe_fallback, "
+                f"got {self.action_type!r}."
+            )
+        return self
+
+
+class TargetingRollbackAction(KillswitchModel):
+    """Typed percentage / segment targeting rollback action."""
+
+    action_type: RollbackActionType = Field(default=RollbackActionType.TARGETING_CONFIGURATION)
+    target_feature: str = Field(min_length=1)
+    environment: str = Field(min_length=1)
+    expected_current_targeting_version: str | None = None
+    expected_current_configuration: dict[str, Any] = Field(default_factory=dict)
+    desired_targeting_configuration: dict[str, Any] = Field(default_factory=dict)
+    expected_current_exposure: StrictInt | None = Field(default=None, ge=0, le=100)
+    desired_exposure: StrictInt = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def _validate_targeting_kind(self) -> TargetingRollbackAction:
+        if self.action_type != RollbackActionType.TARGETING_CONFIGURATION:
+            raise ValueError(
+                "TargetingRollbackAction requires action_type='targeting_configuration'."
+            )
+        return self
+
+
+RollbackAction = BooleanRollbackAction | TargetingRollbackAction
+
+
+class VerifiedSafeState(KillswitchModel):
+    """Immutable, evidence-backed verified-safe checkpoint for a rollout stage."""
+
+    safe_state_id: IdentifierStr = Field(description="Unique verified-safe checkpoint identifier.")
+    incident_id: IdentifierStr = Field(description="Parent incident identifier.")
+    plan_id: IdentifierStr = Field(description="RolloutPlan identifier.")
+    stage_id: IdentifierStr = Field(description="RolloutStage identifier.")
+    environment: str = Field(min_length=1)
+    feature_name: str = Field(min_length=1)
+    provider_feature_id: str | None = None
+    implementation_id: str = Field(min_length=1)
+    deployment_id: IdentifierStr = Field(description="Verified DeploymentEvidence identifier.")
+    implementation_revision: str = Field(min_length=1)
+    implementation_artifact_hash: str
+    configured_exposure_percentage: StrictInt = Field(ge=0, le=100)
+    targeting_configuration: dict[str, Any] = Field(default_factory=dict)
+    targeting_fingerprint: str
+    global_feature_state: StrictBool
+    relevant_legacy_feature_states: dict[str, StrictBool] = Field(default_factory=dict)
+    operation_receipt_id: IdentifierStr
+    approval_id: IdentifierStr
+    readback_evidence_ids: list[IdentifierStr] = Field(min_length=1)
+    security_verification_ids: list[IdentifierStr] = Field(min_length=1)
+    functional_verification_ids: list[IdentifierStr] = Field(min_length=1)
+    telemetry_snapshot_ids: list[IdentifierStr] = Field(min_length=1)
+    evaluated_guardrails: list[str] = Field(default_factory=list)
+    verified_at: UtcDatetime = Field(default_factory=utc_now)
+    policy_version: str = Field(default=POLICY_VERSION, min_length=1)
+    provenance: EvidenceProvenance = Field(default=EvidenceProvenance.DETERMINISTIC_REASONING)
+
+    @field_validator("implementation_artifact_hash", "targeting_fingerprint")
+    @classmethod
+    def _validate_sha256_fields(cls, value: str) -> str:
+        return validate_sha256_hex(value)
+
+    @field_validator(
+        "readback_evidence_ids",
+        "security_verification_ids",
+        "functional_verification_ids",
+        "telemetry_snapshot_ids",
+    )
+    @classmethod
+    def _validate_evidence_lists(cls, value: list[str]) -> list[str]:
+        return validate_evidence_reference_ids(value)
+
+
 class RollbackProposal(KillswitchModel):
     """Human-reviewed rollback proposal when rollout guardrails fail.
 
@@ -1590,10 +1687,39 @@ class RollbackProposal(KillswitchModel):
 
     proposal_id: IdentifierStr = Field(description="Unique rollback proposal identifier.")
     incident_id: IdentifierStr = Field(description="Parent incident identifier.")
+    plan_id: IdentifierStr | None = Field(
+        default=None, description="Parent RolloutPlan identifier."
+    )
+    current_stage_id: IdentifierStr | None = Field(
+        default=None, description="RolloutStage identifier active when rollback was proposed."
+    )
+    trigger_decision_id: IdentifierStr | None = Field(
+        default=None, description="RolloutDecision identifier that triggered rollback."
+    )
     target_environment: str = Field(min_length=1, description="Target environment.")
     target_feature: str = Field(min_length=1, description="Target feature flag key.")
+    provider_feature_id: str | None = Field(
+        default=None, description="External provider feature identifier if known."
+    )
+    deployment_identity: str | None = Field(
+        default=None, description="Deployment revision or ID observed at proposal time."
+    )
+    candidate_identity: str | None = Field(
+        default=None, description="Candidate patch or implementation identity."
+    )
+    action_type: RollbackActionType = Field(
+        default=RollbackActionType.BOOLEAN_STATE,
+        description="Typed rollback action category.",
+    )
+    targeting_action: RollbackAction | None = Field(
+        default=None,
+        description="Typed Boolean or targeting rollback action payload.",
+    )
     current_state: StrictBool | None = Field(
         default=None, description="Observed current boolean state; None if unknown."
+    )
+    expected_targeting_version: str | None = Field(
+        default=None, description="Expected current targeting version for compare-and-set."
     )
     last_verified_safe_state_known: StrictBool = Field(
         description="Explicitly indicates whether a verified-safe target state is known."
@@ -1602,19 +1728,39 @@ class RollbackProposal(KillswitchModel):
         default=None,
         description="Last verified-safe boolean state; None when unknown.",
     )
+    last_verified_safe_state_id: IdentifierStr | None = Field(
+        default=None,
+        description="Identifier of the resolved VerifiedSafeState checkpoint, if known.",
+    )
     proposed_state: StrictBool = Field(
         description="Proposed safe containment/fallback state (typically disabling feature)."
+    )
+    proposed_targeting_configuration: dict[str, Any] | None = Field(
+        default=None,
+        description="Proposed targeting configuration for percentage/segment rollback.",
     )
     triggering_evidence_ids: list[IdentifierStr] = Field(
         min_length=1, description="Evidence IDs triggering rollback recommendation."
     )
+    supporting_evidence_ids: list[IdentifierStr] = Field(
+        default_factory=list, description="Additional supporting evidence IDs."
+    )
     rollback_rationale: str = Field(
         min_length=1, description="Explanation of guardrail failure and rollback objective."
+    )
+    alternative_strategies: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Bounded candidate rollback strategies considered.",
     )
     safety_limitations: list[str] = Field(
         default_factory=list,
         description="Explicit warnings about unknown prior states or vulnerable legacy paths.",
     )
+    required_post_rollback_tests: list[str] = Field(
+        default_factory=list,
+        description="Mandatory post-rollback verification tests.",
+    )
+    policy_version: str = Field(default=POLICY_VERSION, min_length=1)
     manual_review_required: StrictBool = Field(
         default=True,
         description="Mandatory True when last_verified_safe_state_known is False.",
@@ -1622,12 +1768,57 @@ class RollbackProposal(KillswitchModel):
     approval_required: StrictBool = Field(
         default=True, description="Mandatory True; rollbacks require human approval."
     )
+    execution_authorized: StrictBool = Field(
+        default=False, description="Always False on proposal; execution requires fresh approval."
+    )
     created_at: UtcDatetime = Field(default_factory=utc_now, description="UTC creation timestamp.")
+    expires_at: UtcDatetime | None = Field(
+        default=None, description="Optional UTC proposal expiration timestamp."
+    )
+    idempotency_token: str | None = Field(
+        default=None, description="Deterministic idempotency token for proposal."
+    )
+    proposal_hash: str | None = Field(
+        default=None, description="Canonical SHA-256 hash over review-relevant fields."
+    )
 
-    @field_validator("triggering_evidence_ids")
+    @field_validator("proposal_hash")
+    @classmethod
+    def _validate_proposal_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_sha256_hex(value, field_name="proposal_hash")
+
+    @field_validator("triggering_evidence_ids", "supporting_evidence_ids")
     @classmethod
     def _validate_triggering_evidence(cls, value: list[str]) -> list[str]:
         return validate_evidence_reference_ids(value)
+
+    def compute_canonical_hash(self) -> str:
+        """Compute canonical SHA-256 hash over review-relevant rollback proposal fields."""
+        return compute_rollback_proposal_hash(
+            {
+                "proposal_id": self.proposal_id,
+                "incident_id": self.incident_id,
+                "plan_id": self.plan_id,
+                "current_stage_id": self.current_stage_id,
+                "trigger_decision_id": self.trigger_decision_id,
+                "target_environment": self.target_environment,
+                "target_feature": self.target_feature,
+                "provider_feature_id": self.provider_feature_id,
+                "deployment_identity": self.deployment_identity,
+                "candidate_identity": self.candidate_identity,
+                "action_type": self.action_type.value,
+                "current_state": self.current_state,
+                "expected_targeting_version": self.expected_targeting_version,
+                "proposed_state": self.proposed_state,
+                "proposed_targeting_configuration": self.proposed_targeting_configuration,
+                "last_verified_safe_state_id": self.last_verified_safe_state_id,
+                "policy_version": self.policy_version,
+                "approval_required": self.approval_required,
+                "idempotency_token": self.idempotency_token,
+            }
+        )
 
     @model_validator(mode="after")
     def _enforce_rollback_safety(self) -> RollbackProposal:
@@ -1647,6 +1838,13 @@ class RollbackProposal(KillswitchModel):
             raise ValueError(
                 "last_verified_safe_state must be provided when "
                 "last_verified_safe_state_known is True."
+            )
+        expected_hash = self.compute_canonical_hash()
+        if self.proposal_hash is None:
+            object.__setattr__(self, "proposal_hash", expected_hash)
+        elif self.proposal_hash != expected_hash:
+            raise ValueError(
+                "RollbackProposal.proposal_hash does not match canonical payload hash."
             )
         return self
 
@@ -2188,3 +2386,40 @@ class ContainmentPolicyConfig(KillswitchModel):
     max_traversal_depth: StrictInt = Field(default=16, ge=1, le=256)
     max_graph_nodes: StrictInt = Field(default=500, ge=10, le=100_000)
     default_proposal_ttl_seconds: StrictInt = Field(default=900, ge=30, le=86_400)
+
+
+class RollbackPolicyConfig(KillswitchModel):
+    """Schema for ``config/rollback_policy.json``."""
+
+    policy_version: str = Field(
+        default=POLICY_VERSION, min_length=1, description="Rollback policy version."
+    )
+    is_demo_default: StrictBool = Field(default=True)
+    require_fresh_human_approval: StrictBool = Field(default=True)
+    require_post_rollback_verification: StrictBool = Field(default=True)
+    require_readback_reconciliation: StrictBool = Field(default=True)
+    forbid_vulnerable_legacy_reactivation: StrictBool = Field(default=True)
+    allow_partial_exposure_on_security_regression: StrictBool = Field(default=False)
+    safe_state_max_age_seconds: StrictInt = Field(default=86_400, ge=60)
+    proposal_expiration_seconds: StrictInt = Field(default=900, ge=30, le=86_400)
+    post_rollback_hold_seconds: StrictInt = Field(default=300, ge=0, le=86_400)
+    cooldown_suppresses_security_failure: StrictBool = Field(default=False)
+    known_vulnerable_implementations: list[str] = Field(default_factory=lambda: ["search_v1"])
+    precedence_order: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _enforce_rollback_policy_invariants(self) -> RollbackPolicyConfig:
+        if not self.require_fresh_human_approval:
+            raise ValueError("RollbackPolicyConfig must keep require_fresh_human_approval=True.")
+        if not self.forbid_vulnerable_legacy_reactivation:
+            raise ValueError(
+                "RollbackPolicyConfig must keep forbid_vulnerable_legacy_reactivation=True."
+            )
+        if self.allow_partial_exposure_on_security_regression:
+            raise ValueError(
+                "RollbackPolicyConfig cannot allow partial exposure on confirmed "
+                "security regression."
+            )
+        if self.cooldown_suppresses_security_failure:
+            raise ValueError("Cooldown must never suppress confirmed security failure.")
+        return self

@@ -298,12 +298,13 @@ def apply_transition(
         else:
             updates["failure_reason"] = f"Proposal halted due to {event.event_type.value}."
 
-    if context.operation_receipt is not None and event.event_type in (
+    if event.event_type in (
         EventType.FLAG_UPDATE_SUCCESS,
         EventType.FLAG_CHANGE_EXECUTED,
         EventType.FLAG_UPDATE_FAILED,
         EventType.FLAG_CHANGE_FAILED,
-    ):
+        EventType.ROLLBACK_APPLIED,
+    ) and context.operation_receipt is not None:
         rec = context.operation_receipt
         updates["active_operation_id"] = rec.operation_id
         updates["last_operation_timestamp"] = rec.executed_at
@@ -314,6 +315,36 @@ def apply_transition(
             )
         if rec.observed_state is not None:
             updates["observed_feature_state"] = rec.observed_state
+
+    if event.event_type == EventType.ROLLBACK_PROPOSED and context.rollback_proposal is not None:
+        rb = context.rollback_proposal
+        if (
+            incident.current_proposal_id is not None
+            and incident.current_proposal_id != rb.proposal_id
+            and incident.current_proposal_id not in incident.superseded_proposal_ids
+        ):
+            updates["superseded_proposal_ids"] = (
+                *incident.superseded_proposal_ids,
+                incident.current_proposal_id,
+            )
+        updates["current_proposal_id"] = rb.proposal_id
+        updates["current_proposal_hash"] = rb.proposal_hash
+        updates["current_approval_id"] = None
+        updates["active_operation_id"] = None
+
+    if event.event_type == EventType.ROLLBACK_APPROVED:
+        rb_appr = context.stage_approval_decision or context.approval_decision
+        if rb_appr is not None:
+            updates["current_approval_id"] = rb_appr.approval_id
+            if rb_appr.approval_id not in incident.consumed_approval_ids:
+                updates["consumed_approval_ids"] = (
+                    *incident.consumed_approval_ids,
+                    rb_appr.approval_id,
+                )
+            if context.rollback_proposal is not None:
+                updates["active_operation_id"] = (
+                    f"op_{context.rollback_proposal.proposal_id}_{rb_appr.approval_id}"[:64]
+                )
 
     if context.feature_state is not None and context.feature_state.enabled is not None:
         updates["observed_feature_state"] = context.feature_state.enabled

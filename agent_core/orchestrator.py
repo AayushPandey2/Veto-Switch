@@ -34,9 +34,10 @@ from shared.exceptions import (
     UnauthorizedOperationError,
     UnknownFeatureError,
 )
-from shared.identifiers import generate_artifact_id, generate_correlation_id
+from shared.identifiers import generate_artifact_id, generate_correlation_id, generate_event_id
 from shared.logging_config import get_logger, log_structured
 from shared.schemas import (
+    ApprovalDecision,
     ArtifactReference,
     ContainmentProposal,
     DependencyGraph,
@@ -45,6 +46,7 @@ from shared.schemas import (
     IncidentEvent,
     InvestigationSummary,
     MappingResult,
+    OperationReceipt,
     PatchProposal,
     PatchTestResult,
     RouteFlagRegistry,
@@ -467,6 +469,9 @@ class IncidentOrchestrator:
             replay_extra["security_verified"] = ctx.metric_snapshot.security_regression_passed
         if ctx.rollback_proposal is not None:
             replay_extra["rollback_rationale"] = ctx.rollback_proposal.rollback_rationale
+            replay_extra["rollback_proposal_id"] = ctx.rollback_proposal.proposal_id
+            replay_extra["rollback_proposal_hash"] = ctx.rollback_proposal.proposal_hash
+            replay_extra["rollback_action_type"] = ctx.rollback_proposal.action_type.value
 
         persisted_event = enrich_replay_payload(event, extra=replay_extra)
 
@@ -1410,6 +1415,242 @@ class IncidentOrchestrator:
             transition_context=outcome_ctx,
         )
         return report, final_res
+
+    async def execute_rollback_analysis(
+        self,
+        *,
+        incident_id: str,
+        rollback_context: Any,
+        rollback_engine: Any = None,
+        history: list[Any] | None = None,
+        actor: str = "rollback_intelligence_engine",
+    ) -> tuple[Any, EventProcessingResult]:
+        """Run deterministic Phase 10 Rollback Intelligence and emit ROLLBACK_PROPOSED."""
+        from remediation.rollback import RollbackIntelligenceEngine
+
+        engine = rollback_engine or RollbackIntelligenceEngine()
+        analysis = engine.analyze(rollback_context, history=history)
+        proposal = analysis.proposal
+        if proposal is None:
+            raise ConfigurationError("RollbackIntelligenceEngine produced no RollbackProposal.")
+
+        incident = await self.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        evidence_ids = list(proposal.triggering_evidence_ids)
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=incident.incident_id,
+            event_type=EventType.ROLLBACK_PROPOSED,
+            actor=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            sequence_number=incident.latest_event_sequence + 1,
+            correlation_id=incident.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "proposal_id": proposal.proposal_id,
+                "proposal_hash": proposal.proposal_hash,
+                "action_type": proposal.action_type.value,
+                "manual_review_required": proposal.manual_review_required,
+                "reason_codes": [r.value for r in analysis.reason_codes],
+            },
+        )
+        ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            rollback_proposal=proposal,
+            existing_evidence_ids=set(evidence_ids),
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=ctx,
+        )
+        return analysis, res
+
+    async def validate_rollback_receipt(
+        self,
+        *,
+        incident_id: str,
+        proposal: Any,
+        approval: ApprovalDecision | None,
+        receipt: OperationReceipt,
+        actor: str = "platform_executor",
+    ) -> tuple[Any, EventProcessingResult]:
+        """Validate an external rollback OperationReceipt and emit ROLLBACK_APPLIED."""
+        from remediation.recovery.receipt_validator import validate_rollback_receipt
+
+        incident = await self.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        receipt_res = validate_rollback_receipt(
+            proposal=proposal,
+            approval=approval,
+            receipt=receipt,
+            seen_operation_ids=set(incident.operation_idempotency_keys),
+        )
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=ActorType.PLATFORM_EXECUTOR,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=incident.incident_id,
+            event_type=EventType.ROLLBACK_APPLIED,
+            actor=actor,
+            actor_type=ActorType.PLATFORM_EXECUTOR,
+            sequence_number=incident.latest_event_sequence + 1,
+            correlation_id=incident.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "operation_id": receipt.operation_id,
+                "proposal_id": proposal.proposal_id,
+                "outcome": receipt.outcome.value,
+                "valid": receipt_res.valid,
+            },
+        )
+        ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            rollback_proposal=proposal,
+            approval_decision=approval,
+            operation_receipt=receipt,
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=ctx,
+        )
+        return receipt_res, res
+
+    async def complete_rollback_verification(
+        self,
+        *,
+        incident_id: str,
+        proposal: Any,
+        receipt: OperationReceipt | None,
+        management_readback: FeatureState | None,
+        security_verification: VerificationResult | None,
+        functional_verification: VerificationResult | None = None,
+        application_observed_enabled: bool | None = None,
+        application_observed_exposure: int | None = None,
+        legacy_feature_state: FeatureState | None = None,
+        expected_revision: str | None = None,
+        actor: str = "security_verifier",
+    ) -> tuple[Any, EventProcessingResult]:
+        """Reconcile readback, verify post-rollback checks, and emit guarded outcome event."""
+        from remediation.recovery.post_rollback_verifier import (
+            reconcile_post_rollback_readback,
+            verify_post_rollback,
+        )
+        from shared.enums import RollbackVerificationOutcome
+
+        incident = await self.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        readback_res = reconcile_post_rollback_readback(
+            proposal=proposal,
+            management_readback=management_readback,
+            application_observed_enabled=application_observed_enabled,
+            application_observed_exposure=application_observed_exposure,
+            legacy_feature_state=legacy_feature_state,
+        )
+        verify_res = verify_post_rollback(
+            proposal=proposal,
+            receipt=receipt,
+            readback=readback_res,
+            security_verification=security_verification,
+            functional_verification=functional_verification,
+            expected_revision=expected_revision,
+        )
+
+        if (
+            verify_res.outcome == RollbackVerificationOutcome.ROLLBACK_VERIFIED
+            and verify_res.full_containment_restored
+        ):
+            event_type = EventType.ROLLBACK_VERIFICATION_PASSED
+            actor_type = ActorType.SECURITY_VERIFIER
+        elif (
+            verify_res.outcome == RollbackVerificationOutcome.ROLLBACK_VERIFIED
+            and not verify_res.full_containment_restored
+        ):
+            event_type = EventType.ROLLOUT_HOLD
+            actor_type = ActorType.DETERMINISTIC_ENGINE
+        else:
+            event_type = EventType.ROLLBACK_VERIFICATION_FAILED
+            actor_type = ActorType.SECURITY_VERIFIER
+
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=actor_type,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evidence_ids = set(verify_res.evidence_ids)
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=incident.incident_id,
+            event_type=event_type,
+            actor=actor,
+            actor_type=actor_type,
+            sequence_number=incident.latest_event_sequence + 1,
+            correlation_id=incident.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "proposal_id": proposal.proposal_id,
+                "outcome": verify_res.outcome.value,
+                "full_containment_restored": verify_res.full_containment_restored,
+                "partial_exposure_remaining": verify_res.partial_exposure_remaining,
+            },
+        )
+        smoke_passed = (
+            functional_verification.passed
+            if functional_verification is not None
+            else (
+                True
+                if verify_res.outcome == RollbackVerificationOutcome.ROLLBACK_VERIFIED
+                else None
+            )
+        )
+        ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            rollback_proposal=proposal,
+            operation_receipt=receipt,
+            feature_state=management_readback,
+            verification_result=security_verification,
+            functional_smoke_passed=smoke_passed,
+            existing_evidence_ids=None if self._evidence_repo is not None else evidence_ids,
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=ctx,
+        )
+        return verify_res, res
 
 
 async def on_incident_event(

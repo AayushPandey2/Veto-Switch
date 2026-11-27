@@ -596,3 +596,87 @@ class PatchVerificationReasonCode(StrEnum):
     EVIDENCE_CORRUPTED = "EVIDENCE_CORRUPTED"
     EVIDENCE_PROVENANCE_UNTRUSTED = "EVIDENCE_PROVENANCE_UNTRUSTED"
     PARTIAL_RESULTS_REJECTED = "PARTIAL_RESULTS_REJECTED"
+
+
+class RollbackActionType(StrEnum):
+    """Typed rollback action categories distinguishing Boolean vs targeting updates."""
+
+    BOOLEAN_STATE = "boolean_state"
+    TARGETING_CONFIGURATION = "targeting_configuration"
+    SAFE_FALLBACK = "safe_fallback"
+    HOLD_STATE = "hold_state"
+    MANUAL_EMERGENCY = "manual_emergency"
+
+
+class RollbackStrategyType(StrEnum):
+    """Bounded rollback candidate strategy categories (Strategies A-E)."""
+
+    RESTORE_VERIFIED_TARGETING = "restore_verified_targeting"
+    DISABLE_REPLACEMENT_FEATURE = "disable_replacement_feature"
+    RESTORE_VERIFIED_FALLBACK = "restore_verified_fallback"
+    HOLD_AND_RECONCILE = "hold_and_reconcile"
+    MANUAL_EMERGENCY_MITIGATION = "manual_emergency_mitigation"
+
+
+class RollbackFeasibilityStatus(StrEnum):
+    """Deterministic feasibility classification separating analysis from execution."""
+
+    ELIGIBLE_FOR_EXECUTION_PROPOSAL = "eligible_for_execution_proposal"
+    ELIGIBLE_FOR_REVIEW = "eligible_for_review"
+    ANALYTICALLY_POSSIBLE = "analytically_possible"
+    MANUAL_REVIEW_ONLY = "manual_review_only"
+    UNSUPPORTED = "unsupported"
+
+
+class RollbackTriggerCategory(StrEnum):
+    """Validated rollback trigger categories from Phase 09 or operator requests."""
+
+    SECURITY_REGRESSION = "security_regression"
+    ABSOLUTE_ERROR_RATE_BREACH = "absolute_error_rate_breach"
+    BASELINE_RELATIVE_ERROR_BREACH = "baseline_relative_error_breach"
+    LATENCY_DEGRADATION = "latency_degradation"
+    FUNCTIONAL_REGRESSION = "functional_regression"
+    CRITICAL_HEALTH_FAILURE = "critical_health_failure"
+    DEPLOYMENT_IDENTITY_CHANGE = "deployment_identity_change"
+    TARGETING_MISMATCH = "targeting_mismatch"
+    MANUAL_OPERATOR_REQUEST = "manual_operator_request"
+
+
+class RollbackVerificationOutcome(StrEnum):
+    """Distinct post-rollback verification outcomes."""
+
+    ROLLBACK_VERIFIED = "rollback_verified"
+    ROLLBACK_VERIFICATION_FAILED = "rollback_verification_failed"
+    ROLLBACK_VERIFICATION_INCOMPLETE = "rollback_verification_incomplete"
+    ROLLBACK_EXECUTION_FAILED = "rollback_execution_failed"
+    ROLLBACK_OUTCOME_UNKNOWN = "rollback_outcome_unknown"
+    MANUAL_REVIEW_REQUIRED = "manual_review_required"
+
+
+class RollbackReasonCode(StrEnum):
+    """Stable machine-readable reason codes for Phase 10 Rollback Intelligence."""
+
+    SECURITY_REGRESSION_CONFIRMED = "SECURITY_REGRESSION_CONFIRMED"
+    OPERATIONAL_GUARDRAIL_BREACH = "OPERATIONAL_GUARDRAIL_BREACH"
+    TRIGGER_EVIDENCE_MISSING = "TRIGGER_EVIDENCE_MISSING"
+    NO_VERIFIED_SAFE_STATE = "NO_VERIFIED_SAFE_STATE"
+    SAFE_STATE_STALE = "SAFE_STATE_STALE"
+    SAFE_STATE_REVISION_MISMATCH = "SAFE_STATE_REVISION_MISMATCH"
+    CURRENT_STATE_UNKNOWN = "CURRENT_STATE_UNKNOWN"
+    CURRENT_TARGETING_CONFLICT = "CURRENT_TARGETING_CONFLICT"
+    LEGACY_VULNERABLE_PATH_EXPOSED = "LEGACY_VULNERABLE_PATH_EXPOSED"
+    FALLBACK_NOT_VERIFIED = "FALLBACK_NOT_VERIFIED"
+    ROLLBACK_ACTION_UNSUPPORTED = "ROLLBACK_ACTION_UNSUPPORTED"
+    TARGETING_EXECUTOR_UNAVAILABLE = "TARGETING_EXECUTOR_UNAVAILABLE"
+    PROPOSAL_HASH_MISMATCH = "PROPOSAL_HASH_MISMATCH"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
+    APPROVAL_ALREADY_CONSUMED = "APPROVAL_ALREADY_CONSUMED"
+    EXECUTION_RECEIPT_MISMATCH = "EXECUTION_RECEIPT_MISMATCH"
+    ROLLBACK_EXECUTION_FAILED = "ROLLBACK_EXECUTION_FAILED"
+    EXECUTION_OUTCOME_UNKNOWN = "EXECUTION_OUTCOME_UNKNOWN"
+    READBACK_MISMATCH = "READBACK_MISMATCH"
+    POST_ROLLBACK_SECURITY_FAILED = "POST_ROLLBACK_SECURITY_FAILED"
+    POST_ROLLBACK_FUNCTIONAL_FAILED = "POST_ROLLBACK_FUNCTIONAL_FAILED"
+    POST_ROLLBACK_EVIDENCE_MISSING = "POST_ROLLBACK_EVIDENCE_MISSING"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"

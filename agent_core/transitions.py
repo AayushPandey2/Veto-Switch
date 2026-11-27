@@ -558,6 +558,19 @@ TRANSITION_RULES: tuple[TransitionRule, ...] = (
         description="Verified rollback returns safely to CONTAINED (never RECOVERED).",
     ),
     TransitionRule(
+        from_state=IncidentState.ROLLBACK_PROPOSED,
+        event_type=EventType.ROLLOUT_HOLD,
+        to_state=IncidentState.ROLLOUT_PAUSED,
+        required_guards=(
+            *_BASE_GUARDS,
+            "evidence_existence",
+            "environment_consistency",
+            "feature_state_freshness",
+        ),
+        is_recovery=True,
+        description="Verified partial-exposure rollback pauses rollout without claiming CONTAINED.",
+    ),
+    TransitionRule(
         from_state=IncidentState.RECOVERED,
         event_type=EventType.INCIDENT_REOPENED,
         to_state=IncidentState.VALIDATION_REQUESTED,

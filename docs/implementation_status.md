@@ -1,6 +1,6 @@
 # Killswitch X — Implementation Status
 
-**Current Phase:** Prompt 08 / 12 — Isolated Patch Verification Orchestrator (`remediation/patch_tests.py`, `remediation/verification/`, `remediation/adapters/`). Note: Phase 06 (`flag_auditor.py`) is not yet implemented in this workspace.
+**Current Phase:** Prompt 10 / 12 — Rollback Intelligence Engine (`remediation/rollback.py`, `remediation/recovery/`). Note: Phase 06 (`flag_auditor.py`) and Phase 09 (`rollout_agent.py`, `remediation/release/`) are not yet implemented in this workspace.
 
 > [!NOTE]
 > Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–07 and could not be inspected.
@@ -25,6 +25,8 @@
   - Target descriptors distinguishing `stand_in` vs `platform_demo_app`, bounded `SourceSnapshot` & AST localization, `LLMGateway` integration with bounded repair and revision-compatible `REFERENCE_FIXTURE` fallback, strict unified diff parsing & in-memory applicability, AST static safety & minimality metrics, `ArtifactType.PATCH_DIFF` persistence, `ReviewerChecklist` + PR-ready Markdown summary, `IncidentOrchestrator.execute_patch_generation`, offline demos (`remediation.demos`), and 5-case evaluator (`remediation.evaluations.patch_evaluator`, `docs/patch_engineer.md`).
 - **Phase 08 Isolated Patch Verification (`remediation/patch_tests.py`, `remediation/verification/`, `remediation/adapters/`):**
   - `IsolatedPatchVerificationOrchestrator` and reconciled `verify_patch`, `SecurityServicePatchRunner` (`httpx` + `X-KSX-Token`, no redirects, bounded response size) and offline `FixturePatchTestRunner`, mandatory test-plan completeness, 5-point revision identity verification, isolation & evidence integrity policy, strengthened `guard_patch_verification` & `validate_patch_test_result_output`, `IncidentOrchestrator.execute_patch_verification`, Phase 09 `RecoveryHandoff` (`deployment_verified=False`, `rollout_authorized=False`), dashboard JSON & Markdown serializers, offline Demos A–J (`remediation.verification_demos`), and 15-case evaluator (`remediation.evaluations.patch_verification_evaluator`, `docs/patch_verification.md`).
+- **Phase 10 Rollback Intelligence (`remediation/rollback.py`, `remediation/recovery/`):**
+  - Deterministic `RollbackIntelligenceEngine` and compatible `propose_rollback`, `VerifiedSafeState` 11-point checkpointing & `SafeStateHistoryStore`, invalidation & deterministic resolution, trigger validation, bounded Strategies A–E, legacy `search_v1` protection, typed `BooleanRollbackAction` / `TargetingRollbackAction`, canonical `RollbackProposal.proposal_hash`, hardened `ApprovalValidator.validate_rollback_approval` & `guard_rollback_safety`, `RollbackApprovedHandler` targeting metadata, `IncidentOrchestrator` rollback methods (`execute_rollback_analysis`, `validate_rollback_receipt`, `complete_rollback_verification`), Phase 11 `Phase11RollbackHandoff`, offline demos (`remediation.rollback_demos`), and 24-case evaluator (`remediation.evaluations.rollback_evaluator`, `docs/rollback_intelligence.md`).
 
 ### Intentionally Deferred to Phase 06 & Phases 08–12
 

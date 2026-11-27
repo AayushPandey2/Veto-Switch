@@ -40,6 +40,7 @@ DEFAULT_ROUTE_REGISTRY_PATH: Final[str] = "config/route_flag_map.json"
 DEFAULT_DEPENDENCY_GRAPH_PATH: Final[str] = "config/dependency_graph.json"
 DEFAULT_ROLLOUT_POLICY_PATH: Final[str] = "config/rollout_policy.json"
 DEFAULT_CONTAINMENT_POLICY_PATH: Final[str] = "config/containment_policy.json"
+DEFAULT_ROLLBACK_POLICY_PATH: Final[str] = "config/rollback_policy.json"
 
 # Standardized entity identifier prefixes.
 ID_PREFIXES: Final[dict[str, str]] = {
@@ -60,6 +61,7 @@ ID_PREFIXES: Final[dict[str, str]] = {
     "rollout_stage": "rstage",
     "rollout_decision": "rdec",
     "rollback": "rbk",
+    "safe_state": "safe",
     "metric_snapshot": "met",
     "coverage_finding": "cov",
     "report": "rep",
@@ -98,6 +100,29 @@ CANONICAL_PROPOSAL_HASH_FIELDS: Final[tuple[str, ...]] = (
     "desired_enabled",
     "expected_current_enabled",
     "registry_version",
+    "policy_version",
+    "approval_required",
+    "idempotency_token",
+)
+
+# Canonical ordered fields included in RollbackProposal.proposal_hash.
+CANONICAL_ROLLBACK_PROPOSAL_HASH_FIELDS: Final[tuple[str, ...]] = (
+    "proposal_id",
+    "incident_id",
+    "plan_id",
+    "current_stage_id",
+    "trigger_decision_id",
+    "target_environment",
+    "target_feature",
+    "provider_feature_id",
+    "deployment_identity",
+    "candidate_identity",
+    "action_type",
+    "current_state",
+    "expected_targeting_version",
+    "proposed_state",
+    "proposed_targeting_configuration",
+    "last_verified_safe_state_id",
     "policy_version",
     "approval_required",
     "idempotency_token",
