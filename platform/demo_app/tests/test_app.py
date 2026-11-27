@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from demo_app.app import create_app
 from demo_app.config import DemoSettings
-from demo_app.database import get_connection
+from demo_app.database import (
+    get_connection,
+    get_demo_telemetry,
+    set_demo_identity_flag_overrides,
+)
 
 
 def _settings(
@@ -160,3 +164,64 @@ def test_enabled_search_v2_takes_precedence_over_search_v1(
     assert response.status_code == 200
     assert response.get_json()["variant"] == "search_v2"
     assert response.get_json()["count"] == 0
+
+
+def test_identity_override_selects_only_the_named_synthetic_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KILLSWITCH_FLAG_SEARCH_V1", "true")
+    settings = _settings(
+        tmp_path / "demo.sqlite3",
+        demo_mode=True,
+        allow_vulnerable_routes=True,
+    )
+    app = create_app(settings)
+    set_demo_identity_flag_overrides(
+        settings.database_path,
+        {("demo_user_01", "search_v1"): False},
+        actor="test-operator",
+    )
+    client = app.test_client()
+
+    contained = client.get(
+        "/search",
+        query_string={"q": "demo_user_01", "identity": "demo_user_01"},
+    )
+    unaffected = client.get(
+        "/search",
+        query_string={"q": "demo_user_02", "identity": "demo_user_02"},
+    )
+    direct_unsafe = client.get(
+        "/demo/search-v1",
+        query_string={"q": "demo_user_01", "identity": "demo_user_01"},
+    )
+
+    assert contained.status_code == 200
+    assert contained.get_json()["variant"] == "safe_fallback"
+    assert unaffected.get_json()["variant"] == "search_v1"
+    assert direct_unsafe.status_code == 404
+
+
+def test_invalid_demo_identity_is_rejected_and_telemetry_omits_query_data(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path / "demo.sqlite3")
+    app = create_app(settings)
+    client = app.test_client()
+
+    invalid = client.get(
+        "/search",
+        query_string={"q": "private-search-term", "identity": "someone-else"},
+    )
+    safe = client.get(
+        "/search",
+        query_string={"q": "demo_user_01", "identity": "demo_user_01"},
+    )
+    telemetry = get_demo_telemetry(settings.database_path)
+
+    assert invalid.status_code == 400
+    assert safe.status_code == 200
+    assert telemetry["simulation"] is True
+    assert "private-search-term" not in str(telemetry)
+    assert telemetry["recent"][0]["identity"] == "demo_user_01"

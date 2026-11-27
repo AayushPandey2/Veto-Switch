@@ -283,6 +283,52 @@ h1 { margin-bottom: 7px; color: #f0f6f2; font-family: var(--display); font-size:
 .loading-card { padding: 22px; color: var(--muted); font-size: 11px; }
 .page-footer { display: flex; justify-content: space-between; gap: 15px; margin-top: 24px; padding: 15px 2px 0; border-top: 1px solid var(--line-soft); color: var(--faint); font-family: var(--mono); font-size: 8px; letter-spacing: .05em; }
 .page-footer i { color: #4b6f58; font-style: normal; }
+.export-actions { display: grid; grid-template-columns: 1fr 1fr; }
+.export-actions .export-button { border-radius: 0; }
+.export-actions .export-button:first-child { border-right: 1px solid var(--line-soft); border-radius: 0 0 0 9px; }
+.export-actions .export-button:last-child { border-radius: 0 0 9px 0; }
+.reset-demo-button { margin: 14px 16px 0; padding: 8px 10px; border: 1px solid #4e3838; border-radius: 6px; background: #211718; color: #e3b7b7; text-align: left; font-size: 9px; cursor: pointer; }
+.reset-demo-button:disabled { opacity: .55; cursor: wait; }
+.finding-facts { display: flex; flex-wrap: wrap; gap: 7px 14px; margin: 11px 0; color: var(--faint); font-size: 9px; }
+.finding-facts b { margin-left: 4px; color: #c9d9cf; font-weight: 500; }
+.advisory-panel { display: grid; gap: 7px; margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 7px; background: #0d1712; }
+.advisory-panel > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.advisory-panel > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.advisory-note { display: grid; gap: 4px; margin: 10px 0; padding: 10px 12px; border: 1px solid #4b4130; border-radius: 7px; background: #201d16; }
+.advisory-note b { color: #e8d2a5; font-size: 10px; }
+.advisory-note small { color: #b3a680; font-size: 9px; line-height: 1.5; }
+.release-list { display: grid; gap: 10px; margin-top: 15px; }
+.release-list-heading { display: grid; gap: 4px; padding: 0 2px; }
+.release-list-heading b { color: #d0ded4; font-size: 11px; }
+.release-card { padding: 12px; border: 1px solid #2b4135; border-radius: 8px; background: #0d1712; }
+.release-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.release-card-head > div { display: grid; gap: 5px; }
+.release-card-head > div > b { color: #d9e6dd; font-size: 10px; }
+.release-identities { max-height: 52px; margin: 10px 0; overflow: auto; color: #8ca396; font-family: var(--mono); font-size: 8px; line-height: 1.6; }
+.release-receipt { display: flex; flex-wrap: wrap; gap: 7px 15px; padding: 8px 0; color: var(--faint); font-size: 8px; }
+.release-receipt b { margin-left: 4px; color: #c8d6cc; font-weight: 500; }
+.release-receipt small { width: 100%; color: var(--red); }
+.release-actions { margin-top: 9px; }
+.release-restore-note { display: block; margin-top: 8px; color: #a59878; font-size: 8px; line-height: 1.5; }
+.telemetry-layout { display: grid; gap: 14px; }
+.telemetry-control, .telemetry-table-panel { padding: 16px; }
+.telemetry-control > p { max-width: 680px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.traffic-form { display: flex; align-items: end; gap: 10px; margin-top: 15px; }
+.traffic-form label { display: grid; gap: 6px; color: var(--faint); font-family: var(--mono); font-size: 8px; letter-spacing: .08em; }
+.traffic-form input { width: 105px; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: #0a120e; color: var(--text); font: 11px var(--mono); }
+.telemetry-table-panel .coverage-table { margin: 0; }
+.telemetry-head { background: #0c1611; color: var(--faint); font-family: var(--mono); font-size: 8px; letter-spacing: .1em; }
+.telemetry-row { grid-template-columns: minmax(140px, .9fr) minmax(180px, 1.3fr) minmax(100px, .5fr); font-size: 9px; color: #b9c8be; }
+.telemetry-row > b { font-family: var(--mono); color: var(--mint); }
+.telemetry-row > small { color: var(--faint); font-size: 8px; }
+@media (max-width: 600px) {
+  .export-actions { grid-template-columns: 1fr; }
+  .export-actions .export-button:first-child { border-right: 0; border-radius: 0; }
+  .export-actions .export-button:last-child { border-radius: 0 0 9px 9px; }
+  .traffic-form { align-items: stretch; flex-direction: column; }
+  .traffic-form input { width: 100%; }
+  .telemetry-row { grid-template-columns: 1fr; }
+}
 @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 1120px) {

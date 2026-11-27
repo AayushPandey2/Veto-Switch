@@ -39,6 +39,7 @@ class DemoSettings:
     database_path: Path
     flag_adapter: str = "local"
     flagsmith_environment_key: str | None = None
+    flagsmith_server_environment_key: str | None = None
     flagsmith_management_token: str | None = None
     flagsmith_api_url: str = "https://api.flagsmith.com/api/v1"
 
@@ -57,6 +58,10 @@ class DemoSettings:
             if not self.flagsmith_environment_key:
                 raise ValueError(
                     "Flagsmith mode requires a server-side environment key."
+                )
+            if not self.flagsmith_server_environment_key:
+                raise ValueError(
+                    "Flagsmith mode requires a server-side SDK environment key."
                 )
             parsed_url = urlparse(self.flagsmith_api_url)
             if parsed_url.scheme != "https" or not parsed_url.netloc:
@@ -84,6 +89,9 @@ class DemoSettings:
         flagsmith_environment_key = os.getenv(
             "KILLSWITCH_PLATFORM_FLAGSMITH_ENVIRONMENT_KEY"
         )
+        flagsmith_server_environment_key = os.getenv(
+            "KILLSWITCH_PLATFORM_FLAGSMITH_SERVER_ENVIRONMENT_KEY"
+        )
         flagsmith_management_token = os.getenv(
             "KILLSWITCH_PLATFORM_FLAGSMITH_MANAGEMENT_TOKEN"
         )
@@ -99,6 +107,7 @@ class DemoSettings:
             database_path=database_path,
             flag_adapter=flag_adapter,
             flagsmith_environment_key=flagsmith_environment_key,
+            flagsmith_server_environment_key=flagsmith_server_environment_key,
             flagsmith_management_token=flagsmith_management_token,
             flagsmith_api_url=flagsmith_api_url,
         )

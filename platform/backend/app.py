@@ -1,5 +1,6 @@
 """Local API for a persistent, human-approved containment demonstration."""
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -11,18 +12,34 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from backend.database import initialize_platform_database
-from backend.models import ApplyRequest, DecisionCreate, IncidentCreate, RolloutRequest
+from backend.models import (
+    ApplyRequest,
+    DecisionCreate,
+    IncidentCreate,
+    NormalizedFindingCreate,
+    ReleaseApplyRequest,
+    ReleaseDecisionCreate,
+    RolloutRequest,
+    SyntheticTrafficRequest,
+)
 from demo_app.config import DemoSettings
 from demo_app.database import (
+    DEMO_USERS,
+    get_demo_identity_flag_override,
+    get_demo_telemetry,
     get_connection,
+    replace_demo_identity_flag_overrides,
+    seed_demo_data,
     set_demo_flag_overrides,
 )
 from demo_app.manifest import ROUTE_MANIFEST
 from demo_app.feature_flags import FeatureFlagProvider, FeatureState
+from demo_app.file_service import read_public_demo_file
+from demo_app.search_service import search_documents
 from backend.flagsmith_client import (
     FlagsmithIntegrationError,
     FlagsmithManagementClient,
@@ -68,12 +85,12 @@ def _proposal_hash(
     expires_at: str,
 ) -> str:
     content = {
-        "version": 2,
+        "version": 3,
         "proposal_id": proposal_id,
         "incident_id": incident_id,
         "scenario": scenario,
         "safe_flag": safe_flag,
-        "safe_enabled": True,
+        "safe_flag_unchanged": True,
         "vulnerable_flag": vulnerable_flag,
         "vulnerable_enabled": False,
         "target_environment": target_environment,
@@ -81,6 +98,61 @@ def _proposal_hash(
         "expires_at": expires_at,
     }
     return hashlib.sha256(_json(content).encode("utf-8")).hexdigest()
+
+
+def _release_hash(
+    *,
+    release_id: str,
+    incident_id: str,
+    action: str,
+    percentage: int,
+    safe_flag: str,
+    environment: str,
+    before: dict[str, bool | None],
+    desired: dict[str, bool | None],
+    expires_at: str,
+) -> str:
+    payload = {
+        "version": 1,
+        "release_id": release_id,
+        "incident_id": incident_id,
+        "action": action,
+        "percentage": percentage,
+        "safe_flag": safe_flag,
+        "environment": environment,
+        "before": before,
+        "desired": desired,
+        "expires_at": expires_at,
+    }
+    return hashlib.sha256(_json(payload).encode("utf-8")).hexdigest()
+
+
+def _decode_incident(row: dict) -> dict:
+    incident = dict(row)
+    try:
+        incident["finding"] = json.loads(incident.get("finding_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        incident["finding"] = {}
+    incident.pop("finding_json", None)
+    return incident
+
+
+def _decode_release(row: dict) -> dict:
+    release = dict(row)
+    for column, key in (
+        ("before_overrides_json", "before_overrides"),
+        ("desired_identities_json", "desired_overrides"),
+    ):
+        try:
+            release[key] = json.loads(release.pop(column))
+        except (TypeError, json.JSONDecodeError):
+            release[key] = {}
+    receipt_json = release.pop("receipt_json", None)
+    try:
+        release["receipt"] = json.loads(receipt_json) if receipt_json else None
+    except (TypeError, json.JSONDecodeError):
+        release["receipt"] = None
+    return release
 
 
 def _record_event(
@@ -217,7 +289,7 @@ def create_app(
             allow_vulnerable_routes=settings.allow_vulnerable_routes,
             database_path=database_path,
             adapter=settings.flag_adapter,
-            flagsmith_environment_key=settings.flagsmith_environment_key,
+            flagsmith_server_environment_key=settings.flagsmith_server_environment_key,
         )
 
     def management_client() -> FlagsmithManagementClient:
@@ -263,6 +335,140 @@ def create_app(
                 ) from None
         provider = flag_provider()
         return {name: provider.get_state(name).value for name in names}
+
+    demo_identities = tuple(user[1] for user in DEMO_USERS)
+
+    def identity_overrides(flag_name: str) -> dict[str, bool | None]:
+        if settings.flag_adapter == "flagsmith":
+            try:
+                return management_client().read_identity_feature_overrides(
+                    demo_identities,
+                    flag_name,
+                )
+            except FlagsmithIntegrationError as exc:
+                raise HTTPException(status_code=503, detail={"code": exc.code}) from None
+        return {
+            identity: get_demo_identity_flag_override(database_path, identity, flag_name)
+            for identity in demo_identities
+        }
+
+    def apply_identity_overrides(
+        flag_name: str,
+        values: dict[str, bool | None],
+        *,
+        actor: str,
+    ) -> dict[str, bool | None]:
+        if settings.flag_adapter == "flagsmith":
+            try:
+                return management_client().apply_identity_feature_overrides(
+                    values,
+                    flag_name,
+                )
+            except FlagsmithIntegrationError as exc:
+                raise HTTPException(status_code=503, detail={"code": exc.code}) from None
+        replace_demo_identity_flag_overrides(
+            database_path,
+            flag_name,
+            values,
+            actor=actor,
+        )
+        return identity_overrides(flag_name)
+
+    def evaluate_demo_identity(incident: dict, identity: str) -> dict:
+        scenario = incident["scenario"]
+        if scenario == "search_sqli":
+            route = "/search"
+            params = {"q": "demo_user_01", "identity": identity}
+        elif scenario == "path_traversal":
+            route = "/files"
+            params = {"path": "readme.txt", "identity": identity}
+        else:
+            return {"identity": identity, "status": "unknown", "reason": "scenario_unmapped"}
+        try:
+            response = httpx.get(
+                f"{app.state.demo_app_url}{route}",
+                params=params,
+                timeout=3.0,
+            )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Expected an object response.")
+        except (httpx.RequestError, ValueError):
+            return {"identity": identity, "status": "unknown", "reason": "demo_app_unreachable"}
+        return {
+            "identity": identity,
+            "status": "observed" if response.status_code == 200 else "unknown",
+            "http_status": response.status_code,
+            "variant": payload.get("variant", "unknown"),
+        }
+
+    def create_release_proposal(
+        *,
+        incident_id: str,
+        action: str,
+        percentage: int,
+        safe_flag: str,
+        before: dict[str, bool | None],
+        desired: dict[str, bool | None],
+        source_release_id: str | None = None,
+    ) -> dict:
+        release_id = str(uuid4())
+        created_at = _now()
+        expires_at = (datetime.now(UTC) + timedelta(minutes=15)).isoformat()
+        environment = _target_environment(settings)
+        digest = _release_hash(
+            release_id=release_id,
+            incident_id=incident_id,
+            action=action,
+            percentage=percentage,
+            safe_flag=safe_flag,
+            environment=environment,
+            before=before,
+            desired=desired,
+            expires_at=expires_at,
+        )
+        with get_connection(database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO release_proposals
+                    (id, incident_id, action, percentage, safe_flag,
+                     target_environment, before_overrides_json,
+                     desired_identities_json, source_proposal_id,
+                     proposal_hash, status, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_approval', ?, ?)
+                """,
+                (
+                    release_id,
+                    incident_id,
+                    action,
+                    percentage,
+                    safe_flag,
+                    environment,
+                    _json(before),
+                    _json(desired),
+                    source_release_id,
+                    digest,
+                    expires_at,
+                    created_at,
+                ),
+            )
+        _record_event(
+            database_path,
+            incident_id,
+            "rollout_proposal_created" if action == "rollout" else "rollback_proposal_created",
+            "local_release_planner",
+            {
+                "release_proposal_id": release_id,
+                "action": action,
+                "percentage": percentage,
+                "proposal_hash": digest,
+                "expires_at": expires_at,
+                "affected_identity_count": sum(value is not None for value in desired.values()),
+            },
+        )
+        return _decode_release(
+            _get_row(database_path, "SELECT * FROM release_proposals WHERE id = ?", (release_id,))
+        )
 
     def observe_before_change(incident: dict) -> dict:
         if incident["scenario"] == "search_sqli":
@@ -350,6 +556,8 @@ def create_app(
                 if settings.flag_adapter == "flagsmith"
                 else "local_sqlite_demo"
             ),
+            "demo_data": "synthetic",
+            "reset_allowed": settings.flag_adapter == "local" and settings.environment == "local",
         }
 
     @app.get("/flags", dependencies=[Depends(require_operator)])
@@ -377,7 +585,13 @@ def create_app(
         names = tuple(
             dict.fromkeys(flag for route in ROUTE_MANIFEST for flag in route["flags"])
         )
-        states = current_flag_states(names, allow_missing=True)
+        error_code = None
+        try:
+            states = current_flag_states(names, allow_missing=True)
+        except HTTPException as exc:
+            detail = exc.detail
+            error_code = detail.get("code", "flag_state_unavailable") if isinstance(detail, dict) else "flag_state_unavailable"
+            states = {name: FeatureState.UNKNOWN.value for name in names}
         routes = []
         gaps = []
         for route in ROUTE_MANIFEST:
@@ -399,24 +613,35 @@ def create_app(
             "adapter": settings.flag_adapter,
             "routes": routes,
             "gaps": gaps,
+            **({"error": error_code} if error_code else {}),
         }
 
     @app.post("/incidents", status_code=201, dependencies=[Depends(require_operator)])
     def create_incident(payload: IncidentCreate) -> dict:
         incident_id = str(uuid4())
         created_at = _now()
+        finding = {
+            "category": "sqli" if payload.scenario == "search_sqli" else "path_traversal",
+            "affected_route": "/search" if payload.scenario == "search_sqli" else "/files",
+            "severity": "high",
+            "status": "reproduced",
+            "evidence_ids": [],
+            "evidence_summary": payload.evidence_summary,
+            "reporter": payload.reporter,
+        }
         with get_connection(database_path) as connection:
             connection.execute(
                 """
                 INSERT INTO incidents
-                    (id, scenario, reporter, evidence_summary, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (id, scenario, reporter, evidence_summary, finding_json, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     incident_id,
                     payload.scenario,
                     payload.reporter,
                     payload.evidence_summary,
+                    _json(finding),
                     "finding_received",
                     created_at,
                 ),
@@ -428,11 +653,70 @@ def create_app(
             payload.reporter,
             {"scenario": payload.scenario, "evidence_summary": payload.evidence_summary},
         )
-        return _get_row(
-            database_path,
-            "SELECT * FROM incidents WHERE id = ?",
-            (incident_id,),
+        return _decode_incident(
+            _get_row(database_path, "SELECT * FROM incidents WHERE id = ?", (incident_id,))
         )
+
+    @app.post("/findings", status_code=201, dependencies=[Depends(require_operator)])
+    def intake_finding(payload: NormalizedFindingCreate) -> dict:
+        """Accept the shared finding shape and map only supported demo scenarios."""
+        existing = None
+        with get_connection(database_path) as connection:
+            existing = connection.execute(
+                "SELECT * FROM incidents WHERE source_finding_id = ?",
+                (payload.finding_id,),
+            ).fetchone()
+        if existing is not None:
+            result = _decode_incident(dict(existing))
+            result["duplicate"] = True
+            return result
+
+        scenario_by_category = {
+            "sqli": "search_sqli",
+            "path_traversal": "path_traversal",
+        }
+        scenario = scenario_by_category.get(payload.category, "unmapped")
+        incident_id = str(uuid4())
+        created_at = _now()
+        finding = payload.model_dump()
+        status = "finding_received"
+        with get_connection(database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO incidents
+                    (id, scenario, reporter, evidence_summary, finding_json,
+                     source_finding_id, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_id,
+                    scenario,
+                    payload.reporter,
+                    payload.evidence_summary,
+                    _json(finding),
+                    payload.finding_id,
+                    status,
+                    created_at,
+                ),
+            )
+        _record_event(
+            database_path,
+            incident_id,
+            "normalized_finding_received",
+            payload.reporter,
+            {
+                "finding_id": payload.finding_id,
+                "category": payload.category,
+                "severity": payload.severity,
+                "mapping": scenario if scenario != "unmapped" else "unsupported_demo_scenario",
+            },
+        )
+        result = _decode_incident(
+            _get_row(database_path, "SELECT * FROM incidents WHERE id = ?", (incident_id,))
+        )
+        result["duplicate"] = False
+        result["mapped"] = scenario != "unmapped"
+        return result
 
     @app.get("/incidents", dependencies=[Depends(require_operator)])
     def list_incidents() -> dict:
@@ -440,7 +724,7 @@ def create_app(
             rows = connection.execute(
                 "SELECT * FROM incidents ORDER BY created_at DESC"
             ).fetchall()
-        return {"incidents": [dict(row) for row in rows]}
+        return {"incidents": [_decode_incident(dict(row)) for row in rows]}
 
     @app.get("/incidents/{incident_id}", dependencies=[Depends(require_operator)])
     def get_incident(incident_id: str) -> dict:
@@ -454,6 +738,7 @@ def create_app(
                 "SELECT * FROM proposals WHERE incident_id = ?",
                 (incident_id,),
             ).fetchone()
+        incident = _decode_incident(incident)
         incident["proposal"] = dict(proposal) if proposal else None
         if proposal is not None:
             with get_connection(database_path) as connection:
@@ -472,6 +757,29 @@ def create_app(
         else:
             incident["decision"] = None
             incident["operation_receipt"] = None
+        with get_connection(database_path) as connection:
+            releases = connection.execute(
+                """
+                SELECT rp.*, rd.decision AS release_decision,
+                       rd.actor AS release_actor, rd.decided_at,
+                       rr.receipt_json
+                FROM release_proposals rp
+                LEFT JOIN release_decisions rd ON rd.release_proposal_id = rp.id
+                LEFT JOIN release_receipts rr ON rr.release_proposal_id = rp.id
+                WHERE rp.incident_id = ? ORDER BY rp.created_at
+                """,
+                (incident_id,),
+            ).fetchall()
+            patch_rows = connection.execute(
+                "SELECT result_json, created_at FROM patch_test_results "
+                "WHERE incident_id = ? ORDER BY created_at",
+                (incident_id,),
+            ).fetchall()
+        incident["releases"] = [_decode_release(dict(row)) for row in releases]
+        incident["patch_tests"] = [
+            {"result": json.loads(row["result_json"]), "created_at": row["created_at"]}
+            for row in patch_rows
+        ]
         return incident
 
     @app.post(
@@ -492,6 +800,20 @@ def create_app(
         if existing is not None:
             return dict(existing)
 
+        if incident["scenario"] not in SCENARIOS:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "finding_mapping_unavailable", "message": "This finding is stored, but no safe demo action is mapped."},
+            )
+        try:
+            finding = json.loads(incident.get("finding_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            finding = {}
+        if finding.get("status") == "suspected":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "finding_not_reproduced", "message": "Reproduce the finding before preparing a change."},
+            )
         mapping = SCENARIOS[incident["scenario"]]
         observe_before_change(incident)
         target_environment = _target_environment(settings)
@@ -577,6 +899,12 @@ def create_app(
         decision_id = str(uuid4())
         decided_at = _now()
         with get_connection(database_path) as connection:
+            updated = connection.execute(
+                "UPDATE proposals SET status = ? WHERE id = ? AND status = 'pending_approval'",
+                ("approved" if payload.decision == "approve" else "rejected", proposal_id),
+            ).rowcount
+            if updated != 1:
+                raise HTTPException(status_code=409, detail={"code": "proposal_not_pending"})
             connection.execute(
                 """
                 INSERT INTO decisions
@@ -592,10 +920,6 @@ def create_app(
                     payload.reason,
                     decided_at,
                 ),
-            )
-            connection.execute(
-                "UPDATE proposals SET status = ? WHERE id = ?",
-                ("approved" if payload.decision == "approve" else "rejected", proposal_id),
             )
             connection.execute(
                 "UPDATE incidents SET status = ? WHERE id = ?",
@@ -671,6 +995,8 @@ def create_app(
             ).fetchone()
         if existing is not None:
             return json.loads(existing["receipt_json"])
+        if proposal["status"] != "approved":
+            raise HTTPException(status_code=409, detail={"code": "proposal_not_approved"})
         if decision is None or decision["decision"] != "approve":
             raise HTTPException(status_code=409, detail={"code": "approval_required"})
         if decision["proposal_hash"] != proposal["proposal_hash"]:
@@ -680,7 +1006,12 @@ def create_app(
         vulnerable_flag = proposal["vulnerable_flag"]
         safe_flag = proposal["safe_flag"]
         flag_names = (vulnerable_flag, safe_flag)
-        prior_states = current_flag_states(flag_names)
+        try:
+            prior_states = current_flag_states(flag_names)
+        except HTTPException:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE proposals SET status = 'approved' WHERE id = ?", (proposal_id,))
+            raise
         if prior_states != expected_flags:
             with get_connection(database_path) as connection:
                 connection.execute(
@@ -700,6 +1031,47 @@ def create_app(
             )
             raise HTTPException(status_code=409, detail={"code": "flag_state_changed"})
 
+        # Reserve the one-shot operation before contacting Flagsmith. A duplicate
+        # request can then return the saved receipt instead of applying twice.
+        with get_connection(database_path) as connection:
+            claimed = connection.execute(
+                "UPDATE proposals SET status = 'applying' WHERE id = ? AND status = 'approved'",
+                (proposal_id,),
+            ).rowcount
+        if claimed != 1:
+            with get_connection(database_path) as connection:
+                saved = connection.execute(
+                    "SELECT receipt_json FROM operation_receipts WHERE proposal_id = ?",
+                    (proposal_id,),
+                ).fetchone()
+            if saved is not None:
+                return json.loads(saved["receipt_json"])
+            raise HTTPException(status_code=409, detail={"code": "operation_already_in_progress"})
+
+        # Read the snapshot again after reserving the operation so a change made
+        # while the approval request was waiting cannot silently go stale.
+        try:
+            prior_states = current_flag_states(flag_names)
+        except HTTPException:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE proposals SET status = 'approved' WHERE id = ?", (proposal_id,))
+            raise
+        if prior_states != expected_flags:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE proposals SET status = 'stale' WHERE id = ?", (proposal_id,))
+                connection.execute(
+                    "UPDATE incidents SET status = 'proposal_stale' WHERE id = ?",
+                    (proposal["incident_id"],),
+                )
+            _record_event(
+                database_path,
+                proposal["incident_id"],
+                "proposal_stale",
+                "approval_executor",
+                {"proposal_id": proposal_id, "expected": expected_flags, "observed": prior_states},
+            )
+            raise HTTPException(status_code=409, detail={"code": "flag_state_changed"})
+
         actor = decision["actor"]
         adapter_name = (
             "flagsmith_management_api"
@@ -707,14 +1079,15 @@ def create_app(
             else "local_sqlite_demo"
         )
         error_code: str | None = None
+        error_status_code: int | None = None
         if settings.flag_adapter == "flagsmith":
             try:
                 adapter = management_client()
                 adapter.set_flag_enabled(vulnerable_flag, False)
-                adapter.set_flag_enabled(safe_flag, True)
                 after_states = current_flag_states(flag_names)
             except FlagsmithIntegrationError as exc:
                 error_code = exc.code
+                error_status_code = exc.status_code
                 try:
                     after_states = current_flag_states(flag_names)
                 except HTTPException:
@@ -729,14 +1102,13 @@ def create_app(
         else:
             set_demo_flag_overrides(
                 database_path,
-                {vulnerable_flag: False, safe_flag: True},
+                {vulnerable_flag: False},
                 actor=actor,
             )
             after_states = current_flag_states(flag_names)
 
         readback_verified = (
             after_states.get(vulnerable_flag) == FeatureState.DISABLED.value
-            and after_states.get(safe_flag) == FeatureState.ENABLED.value
             and error_code is None
         )
         receipt = {
@@ -748,10 +1120,14 @@ def create_app(
             "before": prior_states,
             "after": after_states,
             "readback_verified": readback_verified,
+            "operation": "disable_vulnerable_flag_only",
+            "safe_flag_unchanged": True,
             "executed_at": _now(),
         }
         if error_code is not None:
             receipt["error_code"] = error_code
+        if error_status_code is not None:
+            receipt["error_status_code"] = error_status_code
         with get_connection(database_path) as connection:
             inserted = connection.execute(
                 """
@@ -825,9 +1201,9 @@ def create_app(
         receipt = json.loads(receipt_row["receipt_json"])
         provider = flag_provider()
         if not receipt["readback_verified"]:
-            raise HTTPException(status_code=409, detail={"code": "safe_flag_not_read_back"})
-        safe_flag_state = provider.get_state(proposal["safe_flag"])
-        if safe_flag_state is FeatureState.UNKNOWN:
+            raise HTTPException(status_code=409, detail={"code": "vulnerable_flag_not_read_back"})
+        vulnerable_flag_state = provider.get_state(proposal["vulnerable_flag"])
+        if vulnerable_flag_state is FeatureState.UNKNOWN:
             result = {
                 "status": "unknown",
                 "reason": "demo_app_flag_evaluation_unknown",
@@ -842,8 +1218,8 @@ def create_app(
                 result,
             )
             return JSONResponse(status_code=503, content=result)
-        if safe_flag_state is not FeatureState.ENABLED:
-            checks = {"safe_flag_evaluated_enabled": False}
+        if vulnerable_flag_state is not FeatureState.DISABLED:
+            checks = {"vulnerable_flag_evaluated_disabled": False}
             result = {"status": "failed", "checks": checks, "observed_at": _now()}
             _set_incident_status(database_path, incident_id, "verification_failed")
             _record_event(
@@ -868,9 +1244,10 @@ def create_app(
                     )
                     attack_payload = attack_response.json()
                     checks = {
-                        "safe_variant_served": (
+                        "vulnerable_flag_disabled": vulnerable_flag_state is FeatureState.DISABLED,
+                        "safe_or_fallback_variant_served": (
                             attack_response.status_code == 200
-                            and attack_payload.get("variant") == "search_v2"
+                            and attack_payload.get("variant") in {"search_v2", "safe_fallback"}
                         ),
                         "injection_returns_no_rows": attack_payload.get("count") == 0,
                         "unrelated_status_route_healthy": (
@@ -888,9 +1265,10 @@ def create_app(
                         params={"path": "readme.txt"},
                     )
                     checks = {
-                        "safe_variant_served": (
+                        "vulnerable_flag_disabled": vulnerable_flag_state is FeatureState.DISABLED,
+                        "safe_or_fallback_variant_served": (
                             public_response.status_code == 200
-                            and public_response.json().get("variant") == "files_v2"
+                            and public_response.json().get("variant") in {"files_v2", "safe_fallback"}
                         ),
                         "traversal_blocked": traversal_response.status_code == 404,
                         "unrelated_status_route_healthy": (
@@ -969,6 +1347,54 @@ def create_app(
         return result
 
     @app.post(
+        "/incidents/{incident_id}/patch/test",
+        dependencies=[Depends(require_operator)],
+    )
+    def test_patch(incident_id: str) -> dict:
+        incident = _get_row(database_path, "SELECT * FROM incidents WHERE id = ?", (incident_id,))
+        proposal = _get_row(database_path, "SELECT * FROM proposals WHERE incident_id = ?", (incident_id,))
+        if incident["status"] != "verified":
+            raise HTTPException(status_code=409, detail={"code": "containment_verification_required"})
+        checks: dict[str, bool] = {}
+        if incident["scenario"] == "search_sqli":
+            checks = {
+                "injection_query_returns_no_rows": len(search_documents(database_path, "' OR 1=1 -- ")) == 0,
+                "normal_synthetic_search_still_works": len(search_documents(database_path, "demo_user_01")) == 1,
+            }
+        elif incident["scenario"] == "path_traversal":
+            checks = {
+                "traversal_path_is_not_readable": read_public_demo_file("../private/internal_note.txt") is None,
+                "public_demo_file_still_works": read_public_demo_file("readme.txt") is not None,
+            }
+        else:
+            raise HTTPException(status_code=422, detail={"code": "patch_scenario_unsupported"})
+
+        vulnerable_state = flag_provider().get_state(proposal["vulnerable_flag"])
+        checks["vulnerable_flag_is_disabled"] = vulnerable_state is FeatureState.DISABLED
+        observation = evaluate_demo_identity(incident, demo_identities[0])
+        checks["running_demo_route_is_safe"] = (
+            observation.get("status") == "observed"
+            and observation.get("variant") in {proposal["safe_flag"], "safe_fallback"}
+        )
+        passed = all(checks.values())
+        result = {
+            "status": "passed" if passed else "failed",
+            "scenario": incident["scenario"],
+            "checks": checks,
+            "runtime_observation": observation,
+            "observed_at": _now(),
+            "execution": "fixed built-in synthetic checks; no shell commands executed",
+        }
+        created_at = _now()
+        with get_connection(database_path) as connection:
+            connection.execute(
+                "INSERT INTO patch_test_results (id, incident_id, result_json, created_at) VALUES (?, ?, ?, ?)",
+                (str(uuid4()), incident_id, _json(result), created_at),
+            )
+        _record_event(database_path, incident_id, "patch_test_result", "local_patch_tester", result)
+        return result
+
+    @app.post(
         "/incidents/{incident_id}/rollout",
         dependencies=[Depends(require_operator)],
     )
@@ -983,40 +1409,305 @@ def create_app(
                 status_code=409,
                 detail={"code": "containment_verification_required"},
             )
-
         with get_connection(database_path) as connection:
-            users = connection.execute(
-                "SELECT username, department FROM users ORDER BY id"
-            ).fetchall()
-        eligible_users = [dict(user) for user in users]
-        selected_count = (len(eligible_users) * payload.percentage + 99) // 100
-        ranked_users = sorted(
-            eligible_users,
-            key=lambda user: hashlib.sha256(
-                f"{incident_id}:{user['username']}".encode("utf-8")
-            ).hexdigest(),
+            latest_test = connection.execute(
+                "SELECT result_json FROM patch_test_results WHERE incident_id = ? ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            ).fetchone()
+            active_release = connection.execute(
+                "SELECT id FROM release_proposals WHERE incident_id = ? "
+                "AND status IN ('pending_approval', 'approved', 'applying') LIMIT 1",
+                (incident_id,),
+            ).fetchone()
+        if latest_test is None or json.loads(latest_test["result_json"]).get("status") != "passed":
+            raise HTTPException(status_code=409, detail={"code": "patch_test_must_pass"})
+        if active_release is not None:
+            raise HTTPException(status_code=409, detail={"code": "release_change_already_pending"})
+
+        incident_row = _get_row(database_path, "SELECT scenario FROM incidents WHERE id = ?", (incident_id,))
+        scenario = incident_row["scenario"]
+        if scenario not in SCENARIOS:
+            raise HTTPException(status_code=422, detail={"code": "finding_mapping_unavailable"})
+        safe_flag = SCENARIOS[scenario]["safe_flag"]
+        vulnerable_flag = SCENARIOS[scenario]["vulnerable_flag"]
+        states = current_flag_states((safe_flag, vulnerable_flag))
+        if states.get(vulnerable_flag) != FeatureState.DISABLED.value:
+            raise HTTPException(status_code=409, detail={"code": "containment_not_active"})
+        if states.get(safe_flag) != FeatureState.DISABLED.value:
+            raise HTTPException(status_code=409, detail={"code": "safe_flag_default_must_be_disabled"})
+
+        ranking = sorted(
+            demo_identities,
+            key=lambda identity: hashlib.sha256(f"{incident_id}:{identity}".encode("utf-8")).hexdigest(),
         )
-        selected_users = ranked_users[:selected_count]
-        result = {
-            "status": "preview_only",
-            "incident_id": incident_id,
-            "requested_percentage": payload.percentage,
-            "eligible_count": len(eligible_users),
-            "selected_count": len(selected_users),
-            "selected_identities": selected_users,
-            "deterministic": True,
-            "applied": False,
-            "targeting_changed": False,
-            "message": "Synthetic cohort preview only. No Flagsmith targeting or flags were changed.",
-        }
+        selected_count = (len(ranking) * payload.percentage + 99) // 100
+        selected = set(ranking[:selected_count])
+        before = identity_overrides(safe_flag)
+        desired = {identity: identity in selected for identity in demo_identities}
+        release = create_release_proposal(
+            incident_id=incident_id,
+            action="rollout",
+            percentage=payload.percentage,
+            safe_flag=safe_flag,
+            before=before,
+            desired=desired,
+        )
+        release["eligible_count"] = len(demo_identities)
+        release["selected_count"] = selected_count
+        release["selected_identities"] = sorted(selected)
+        release["deterministic"] = True
+        release["status"] = "pending_approval"
+        return release
+
+    @app.post(
+        "/release-proposals/{proposal_id}/decision",
+        dependencies=[Depends(require_operator)],
+    )
+    def decide_release(proposal_id: str, payload: ReleaseDecisionCreate) -> dict:
+        release = _get_row(database_path, "SELECT * FROM release_proposals WHERE id = ?", (proposal_id,))
+        if release["target_environment"] != _target_environment(settings):
+            raise HTTPException(status_code=409, detail={"code": "proposal_environment_changed"})
+        if not hmac.compare_digest(payload.proposal_hash, release["proposal_hash"]):
+            raise HTTPException(status_code=409, detail={"code": "proposal_hash_mismatch"})
+        _ensure_unexpired(release)
+        if release["status"] != "pending_approval":
+            raise HTTPException(status_code=409, detail={"code": "proposal_not_pending"})
+        decision_id = str(uuid4())
+        decided_at = _now()
+        with get_connection(database_path) as connection:
+            updated = connection.execute(
+                "UPDATE release_proposals SET status = ? WHERE id = ? AND status = 'pending_approval'",
+                ("approved" if payload.decision == "approve" else "rejected", proposal_id),
+            ).rowcount
+            if updated != 1:
+                raise HTTPException(status_code=409, detail={"code": "proposal_not_pending"})
+            connection.execute(
+                """INSERT INTO release_decisions
+                   (id, release_proposal_id, decision, actor, proposal_hash, reason, decided_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (decision_id, proposal_id, payload.decision, payload.actor,
+                 payload.proposal_hash, payload.reason, decided_at),
+            )
         _record_event(
             database_path,
-            incident_id,
-            "rollout_previewed",
-            "local_rollout_preview",
-            result,
+            release["incident_id"],
+            "release_approved" if payload.decision == "approve" else "release_rejected",
+            payload.actor,
+            {"release_proposal_id": proposal_id, "proposal_hash": payload.proposal_hash},
         )
-        return result
+        return _get_row(database_path, "SELECT * FROM release_decisions WHERE id = ?", (decision_id,))
+
+    @app.post(
+        "/release-proposals/{proposal_id}/apply",
+        dependencies=[Depends(require_operator)],
+    )
+    def apply_release(proposal_id: str, payload: ReleaseApplyRequest) -> dict:
+        release = _get_row(database_path, "SELECT * FROM release_proposals WHERE id = ?", (proposal_id,))
+        before = json.loads(release["before_overrides_json"])
+        desired = json.loads(release["desired_identities_json"])
+        expected_hash = _release_hash(
+            release_id=release["id"],
+            incident_id=release["incident_id"],
+            action=release["action"],
+            percentage=release["percentage"],
+            safe_flag=release["safe_flag"],
+            environment=release["target_environment"],
+            before=before,
+            desired=desired,
+            expires_at=release["expires_at"],
+        )
+        if (
+            release["target_environment"] != _target_environment(settings)
+            or not hmac.compare_digest(payload.proposal_hash, release["proposal_hash"])
+            or not hmac.compare_digest(expected_hash, release["proposal_hash"])
+        ):
+            raise HTTPException(status_code=409, detail={"code": "proposal_hash_or_environment_mismatch"})
+        with get_connection(database_path) as connection:
+            existing = connection.execute(
+                "SELECT receipt_json FROM release_receipts WHERE release_proposal_id = ?",
+                (proposal_id,),
+            ).fetchone()
+            decision = connection.execute(
+                "SELECT * FROM release_decisions WHERE release_proposal_id = ?",
+                (proposal_id,),
+            ).fetchone()
+        if existing is not None:
+            return json.loads(existing["receipt_json"])
+        _ensure_unexpired(release)
+        if release["status"] != "approved" or decision is None or decision["decision"] != "approve":
+            raise HTTPException(status_code=409, detail={"code": "approval_required"})
+        if decision["proposal_hash"] != release["proposal_hash"]:
+            raise HTTPException(status_code=409, detail={"code": "approval_hash_mismatch"})
+        try:
+            current = identity_overrides(release["safe_flag"])
+        except HTTPException:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE release_proposals SET status = 'approved' WHERE id = ?", (proposal_id,))
+            raise
+        if current != before:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE release_proposals SET status = 'stale' WHERE id = ?", (proposal_id,))
+            _record_event(database_path, release["incident_id"], "release_proposal_stale", "release_executor", {"release_proposal_id": proposal_id})
+            raise HTTPException(status_code=409, detail={"code": "identity_state_changed"})
+        with get_connection(database_path) as connection:
+            claimed = connection.execute(
+                "UPDATE release_proposals SET status = 'applying' WHERE id = ? AND status = 'approved'",
+                (proposal_id,),
+            ).rowcount
+        if claimed != 1:
+            raise HTTPException(status_code=409, detail={"code": "operation_already_in_progress"})
+
+        try:
+            current = identity_overrides(release["safe_flag"])
+        except HTTPException:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE release_proposals SET status = 'approved' WHERE id = ?", (proposal_id,))
+            raise
+        if current != before:
+            with get_connection(database_path) as connection:
+                connection.execute("UPDATE release_proposals SET status = 'stale' WHERE id = ?", (proposal_id,))
+            _record_event(database_path, release["incident_id"], "release_proposal_stale", "release_executor", {"release_proposal_id": proposal_id})
+            raise HTTPException(status_code=409, detail={"code": "identity_state_changed"})
+
+        error_code = None
+        try:
+            observed_overrides = apply_identity_overrides(
+                release["safe_flag"], desired, actor=decision["actor"]
+            )
+        except (FlagsmithIntegrationError, HTTPException) as exc:
+            if isinstance(exc, HTTPException):
+                detail = exc.detail
+                error_code = detail.get("code", "identity_override_failed") if isinstance(detail, dict) else "identity_override_failed"
+            else:
+                error_code = exc.code
+            try:
+                observed_overrides = identity_overrides(release["safe_flag"])
+            except HTTPException:
+                observed_overrides = {}
+        incident_for_eval = _get_row(database_path, "SELECT * FROM incidents WHERE id = ?", (release["incident_id"],))
+        evaluations = [evaluate_demo_identity(incident_for_eval, identity) for identity in demo_identities]
+        expected_safe_variant = SCENARIOS[incident_for_eval["scenario"]]["safe_flag"]
+        evaluation_checks = {
+            item["identity"]: (
+                item["status"] == "observed"
+                and item["variant"] == (expected_safe_variant if desired.get(item["identity"]) else "safe_fallback")
+            )
+            for item in evaluations
+        }
+        verified = observed_overrides == desired and all(evaluation_checks.values()) and error_code is None
+        guardrail_violations = [identity for identity, passed in evaluation_checks.items() if not passed]
+        guardrail_status = "passed" if verified else "violated" if guardrail_violations else "unknown"
+        receipt = {
+            "operation_id": str(uuid4()),
+            "release_proposal_id": proposal_id,
+            "proposal_hash": release["proposal_hash"],
+            "action": release["action"],
+            "percentage": release["percentage"],
+            "environment": release["target_environment"],
+            "before": current,
+            "desired": desired,
+            "after": observed_overrides,
+            "evaluations": evaluations,
+            "evaluation_checks": evaluation_checks,
+            "readback_verified": observed_overrides == desired,
+            "app_evaluation_verified": all(evaluation_checks.values()),
+            "guardrail_status": guardrail_status,
+            "guardrail_violations": guardrail_violations,
+            "recommendation": "continue" if verified else "rollback_proposed",
+            "status": "applied" if verified else "failed",
+            "executed_at": _now(),
+        }
+        if error_code:
+            receipt["error_code"] = error_code
+        with get_connection(database_path) as connection:
+            connection.execute(
+                "INSERT INTO release_receipts (id, release_proposal_id, receipt_json, created_at) VALUES (?, ?, ?, ?)",
+                (receipt["operation_id"], proposal_id, _json(receipt), receipt["executed_at"]),
+            )
+            connection.execute(
+                "UPDATE release_proposals SET status = ? WHERE id = ?",
+                ("applied" if verified else "apply_failed", proposal_id),
+            )
+        _record_event(
+            database_path,
+            release["incident_id"],
+            "release_applied" if verified else "release_guardrail_violation",
+            decision["actor"],
+            receipt,
+        )
+        if not verified:
+            raise HTTPException(status_code=502, detail={"code": error_code or "release_verification_failed", "receipt": receipt})
+        return receipt
+
+    @app.post(
+        "/incidents/{incident_id}/rollouts/{release_id}/rollback",
+        dependencies=[Depends(require_operator)],
+    )
+    def propose_rollback(incident_id: str, release_id: str) -> dict:
+        source = _get_row(
+            database_path,
+            "SELECT * FROM release_proposals WHERE id = ? AND incident_id = ?",
+            (release_id, incident_id),
+        )
+        if source["action"] != "rollout" or source["status"] not in {"applied", "apply_failed"}:
+            raise HTTPException(status_code=409, detail={"code": "rollback_source_not_applied"})
+        with get_connection(database_path) as connection:
+            latest = connection.execute(
+                "SELECT id FROM release_proposals WHERE incident_id = ? AND status IN ('applied', 'apply_failed') "
+                "ORDER BY created_at DESC LIMIT 1",
+                (incident_id,),
+            ).fetchone()
+        if latest is None or latest["id"] != release_id:
+            raise HTTPException(status_code=409, detail={"code": "rollback_source_not_latest"})
+        with get_connection(database_path) as connection:
+            receipt = connection.execute(
+                "SELECT receipt_json FROM release_receipts WHERE release_proposal_id = ?",
+                (release_id,),
+            ).fetchone()
+        if receipt is None:
+            raise HTTPException(status_code=409, detail={"code": "rollback_receipt_required"})
+        with get_connection(database_path) as connection:
+            now = _now()
+            expired = connection.execute(
+                "SELECT id FROM release_proposals WHERE incident_id = ? "
+                "AND status IN ('pending_approval', 'approved') AND expires_at <= ?",
+                (incident_id, now),
+            ).fetchall()
+            if expired:
+                connection.executemany(
+                    "UPDATE release_proposals SET status = 'expired' WHERE id = ?",
+                    [(row["id"],) for row in expired],
+                )
+            pending = connection.execute(
+                "SELECT id FROM release_proposals WHERE incident_id = ? "
+                "AND status IN ('pending_approval', 'approved', 'applying') LIMIT 1",
+                (incident_id,),
+            ).fetchone()
+        for row in expired:
+            _record_event(
+                database_path,
+                incident_id,
+                "release_proposal_expired",
+                "release_planner",
+                {"release_proposal_id": row["id"]},
+            )
+        if pending is not None:
+            raise HTTPException(status_code=409, detail={"code": "release_change_already_pending"})
+        current = identity_overrides(source["safe_flag"])
+        desired = json.loads(source["before_overrides_json"])
+        percentage = sum(value is True for value in desired.values()) * 100 // len(demo_identities)
+        release = create_release_proposal(
+            incident_id=incident_id,
+            action="rollback",
+            percentage=percentage,
+            safe_flag=source["safe_flag"],
+            before=current,
+            desired=desired,
+            source_release_id=release_id,
+        )
+        release["restores_release_id"] = release_id
+        release["status"] = "pending_approval"
+        return release
 
     @app.get("/incidents/{incident_id}/events", dependencies=[Depends(require_operator)])
     def list_events(incident_id: str) -> dict:
@@ -1032,6 +1723,114 @@ def create_app(
             event["payload"] = json.loads(event.pop("payload_json"))
             events.append(event)
         return {"incident_id": incident_id, "events": events}
+
+    @app.get(
+        "/incidents/{incident_id}/events/stream",
+        dependencies=[Depends(require_operator)],
+    )
+    async def stream_events(incident_id: str, request: Request, after: int = 0):
+        _get_row(database_path, "SELECT id FROM incidents WHERE id = ?", (incident_id,))
+
+        async def generate():
+            last_id = max(after, 0)
+            heartbeat_at = asyncio.get_running_loop().time()
+            while not await request.is_disconnected():
+                with get_connection(database_path) as connection:
+                    rows = connection.execute(
+                        "SELECT * FROM audit_events WHERE incident_id = ? AND id > ? ORDER BY id",
+                        (incident_id, last_id),
+                    ).fetchall()
+                for row in rows:
+                    event = dict(row)
+                    event["payload"] = json.loads(event.pop("payload_json"))
+                    last_id = event["id"]
+                    yield f"id: {last_id}\nevent: {event['event_type']}\ndata: {_json(event)}\n\n"
+                now = asyncio.get_running_loop().time()
+                if now - heartbeat_at >= 15:
+                    yield ": keep-alive\n\n"
+                    heartbeat_at = now
+                await asyncio.sleep(1)
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/telemetry", dependencies=[Depends(require_operator)])
+    def telemetry() -> dict:
+        return get_demo_telemetry(database_path, limit=100)
+
+    @app.post("/telemetry/generate", dependencies=[Depends(require_operator)])
+    async def generate_telemetry(payload: SyntheticTrafficRequest) -> dict:
+        observations = []
+        try:
+            async with httpx.AsyncClient(base_url=app.state.demo_app_url, timeout=3.0) as client:
+                for index in range(payload.requests):
+                    identity = demo_identities[index % len(demo_identities)]
+                    params = (
+                        {"q": f"demo_user_{index % len(demo_identities) + 1:02d}", "identity": identity}
+                        if payload.route == "/search"
+                        else {"path": "readme.txt", "identity": identity}
+                    )
+                    response = await client.get(payload.route, params=params)
+                    try:
+                        body = response.json()
+                    except ValueError:
+                        body = {}
+                    observations.append(
+                        {
+                            "identity": identity,
+                            "status_code": response.status_code,
+                            "variant": body.get("variant", "unknown") if isinstance(body, dict) else "unknown",
+                        }
+                    )
+        except (httpx.RequestError, ValueError):
+            raise HTTPException(status_code=503, detail={"code": "demo_app_unreachable"}) from None
+        return {
+            "data_label": "DEMO / SYNTHETIC DATA",
+            "simulation": True,
+            "requested": payload.requests,
+            "completed": len(observations),
+            "route": payload.route,
+            "observations": observations,
+        }
+
+    @app.post("/demo/reset", dependencies=[Depends(require_operator)])
+    def reset_demo() -> dict:
+        if settings.flag_adapter != "local" or settings.environment != "local":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "reset_local_adapter_only", "message": "Reset is available only for the local SQLite demo."},
+            )
+        with get_connection(database_path) as connection:
+            for table in (
+                "release_receipts",
+                "release_decisions",
+                "release_proposals",
+                "operation_receipts",
+                "decisions",
+                "proposals",
+                "patch_test_results",
+                "audit_events",
+                "incidents",
+                "demo_request_events",
+                "demo_feature_flags",
+                "demo_identity_feature_flags",
+            ):
+                connection.execute(f"DELETE FROM {table}")
+        set_demo_flag_overrides(
+            database_path,
+            {name: False for name in ("search_v1", "search_v2", "files_v1", "files_v2")},
+            actor="local_demo_reset",
+        )
+        seed_demo_data(database_path)
+        return {
+            "status": "reset",
+            "data_label": "DEMO / SYNTHETIC DATA",
+            "records": "deterministic 20-user fixture retained and reseeded",
+            "flags": "local SQLite overrides cleared; environment defaults are active",
+        }
 
     @app.get("/incidents/{incident_id}/report", dependencies=[Depends(require_operator)])
     def incident_report(incident_id: str) -> dict:
@@ -1061,6 +1860,19 @@ def create_app(
                 "SELECT * FROM audit_events WHERE incident_id = ? ORDER BY id",
                 (incident_id,),
             ).fetchall()
+            release_rows = connection.execute(
+                """SELECT rp.*, rd.decision AS release_decision,
+                          rd.actor AS release_actor, rd.decided_at, rr.receipt_json
+                   FROM release_proposals rp
+                   LEFT JOIN release_decisions rd ON rd.release_proposal_id = rp.id
+                   LEFT JOIN release_receipts rr ON rr.release_proposal_id = rp.id
+                   WHERE rp.incident_id = ? ORDER BY rp.created_at""",
+                (incident_id,),
+            ).fetchall()
+            patch_rows = connection.execute(
+                "SELECT result_json, created_at FROM patch_test_results WHERE incident_id = ? ORDER BY created_at",
+                (incident_id,),
+            ).fetchall()
 
         events = []
         for row in event_rows:
@@ -1069,13 +1881,18 @@ def create_app(
             events.append(event)
         return {
             "data_label": "DEMO / SYNTHETIC DATA",
-            "incident": incident,
+            "incident": _decode_incident(incident),
             "proposal": dict(proposal_row) if proposal_row else None,
             "decision": dict(decision_row) if decision_row else None,
             "operation_receipt": (
                 json.loads(receipt_row["receipt_json"]) if receipt_row else None
             ),
             "events": events,
+            "releases": [_decode_release(dict(row)) for row in release_rows],
+            "patch_tests": [
+                {"result": json.loads(row["result_json"]), "created_at": row["created_at"]}
+                for row in patch_rows
+            ],
         }
 
     return app

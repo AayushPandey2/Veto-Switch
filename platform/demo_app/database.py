@@ -66,7 +66,30 @@ def initialize_database(database_path: Path) -> None:
                 updated_by TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS demo_identity_feature_flags (
+                identity TEXT NOT NULL,
+                flag_name TEXT NOT NULL,
+                enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+                updated_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(identity, flag_name)
+            );
+
+            CREATE TABLE IF NOT EXISTS demo_request_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                route TEXT NOT NULL,
+                identity TEXT,
+                variant TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                status_code INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS demo_request_events_created_idx "
+            "ON demo_request_events(created_at DESC)"
         )
 
 
@@ -81,6 +104,19 @@ def get_demo_flag_override(database_path: Path, flag_name: str) -> bool | None:
     if row is None:
         return None
     return bool(row["enabled"])
+
+
+def get_demo_identity_flag_override(
+    database_path: Path,
+    identity: str,
+    flag_name: str,
+) -> bool | None:
+    with get_connection(database_path) as connection:
+        row = connection.execute(
+            "SELECT enabled FROM demo_identity_feature_flags WHERE identity = ? AND flag_name = ?",
+            (identity, flag_name),
+        ).fetchone()
+    return None if row is None else bool(row["enabled"])
 
 
 def set_demo_flag_overrides(
@@ -106,6 +142,121 @@ def set_demo_flag_overrides(
                 for flag_name, enabled in values.items()
             ],
         )
+
+
+def set_demo_identity_flag_overrides(
+    database_path: Path,
+    values: dict[tuple[str, str], bool],
+    *,
+    actor: str,
+) -> None:
+    updated_at = datetime.now(UTC).isoformat()
+    with get_connection(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO demo_identity_feature_flags
+                (identity, flag_name, enabled, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(identity, flag_name) DO UPDATE SET
+                enabled = excluded.enabled,
+                updated_by = excluded.updated_by,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (identity, flag_name, int(enabled), actor, updated_at)
+                for (identity, flag_name), enabled in values.items()
+            ],
+        )
+
+
+def replace_demo_identity_flag_overrides(
+    database_path: Path,
+    flag_name: str,
+    values: dict[str, bool | None],
+    *,
+    actor: str,
+) -> None:
+    """Replace a flag's seeded identity overrides, where None means inherit."""
+    updated_at = datetime.now(UTC).isoformat()
+    with get_connection(database_path) as connection:
+        connection.execute(
+            "DELETE FROM demo_identity_feature_flags WHERE flag_name = ?",
+            (flag_name,),
+        )
+        connection.executemany(
+            """
+            INSERT INTO demo_identity_feature_flags
+                (identity, flag_name, enabled, updated_by, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (identity, flag_name, int(enabled), actor, updated_at)
+                for identity, enabled in values.items()
+                if enabled is not None
+            ],
+        )
+
+
+def delete_demo_identity_flag_override(
+    database_path: Path,
+    identity: str,
+    flag_name: str,
+) -> None:
+    with get_connection(database_path) as connection:
+        connection.execute(
+            "DELETE FROM demo_identity_feature_flags WHERE identity = ? AND flag_name = ?",
+            (identity, flag_name),
+        )
+
+
+def record_demo_request(
+    database_path: Path,
+    *,
+    route: str,
+    identity: str | None,
+    variant: str,
+    outcome: str,
+    status_code: int,
+) -> None:
+    with get_connection(database_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO demo_request_events
+                (route, identity, variant, outcome, status_code, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (route, identity, variant, outcome, status_code, datetime.now(UTC).isoformat()),
+        )
+        if cursor.lastrowid and cursor.lastrowid % 256 == 0:
+            connection.execute(
+                "DELETE FROM demo_request_events WHERE id NOT IN "
+                "(SELECT id FROM demo_request_events ORDER BY id DESC LIMIT 10000)"
+            )
+
+
+def get_demo_telemetry(database_path: Path, *, limit: int = 100) -> dict:
+    with get_connection(database_path) as connection:
+        summary = connection.execute(
+            """
+            SELECT route, variant, outcome, status_code, COUNT(*) AS requests
+            FROM demo_request_events
+            GROUP BY route, variant, outcome, status_code
+            ORDER BY route, variant, outcome, status_code
+            """
+        ).fetchall()
+        recent = connection.execute(
+            """
+            SELECT id, route, identity, variant, outcome, status_code, created_at
+            FROM demo_request_events ORDER BY id DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return {
+        "data_label": "DEMO / SYNTHETIC DATA",
+        "simulation": True,
+        "summary": [dict(row) for row in summary],
+        "recent": [dict(row) for row in recent],
+    }
 
 
 def seed_demo_data(database_path: Path) -> None:
