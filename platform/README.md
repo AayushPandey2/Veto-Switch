@@ -76,7 +76,7 @@ The local SQLite mode is available without Flagsmith credentials. The real Flags
 - The incident view compares the prepared change with safe-fallback and hold choices, and names affected and unrelated routes using the local route manifest. It does not estimate production customer impact.
 - The local SQLite flag adapter is configured by default. The local approval and verification flow has been run successfully with Docker Compose.
 - A Flagsmith management adapter and server-side evaluation path are present, but real Flagsmith changes have **not** been verified. The private `.env` currently needs a dedicated Flagsmith environment key and management token before that path can be used. Never paste those credentials into chat or commit them.
-- The stage selector is a preview only: staged percentage targeting is not applied to Flagsmith. The patch option displays a read-only unified diff between the safe and vulnerable demo source files; its test status is explicitly `Not run`, and no code is deployed. Rollback execution is not implemented.
+- The stage selector shows a deterministic preview of the seeded synthetic users for 5%, 25%, 50%, or 100%. It does not apply targeting or measure traffic. The patch option displays a read-only unified diff between the safe and vulnerable demo source files; its test status is explicitly `Not run`, and no code is deployed. Rollback execution is not implemented.
 - Production authentication, real cohort telemetry, and the remaining recovery and advisory screens are still future work.
 
 The UI shows the local adapter and labels the environment as local. Treat a green verification result as evidence from the local synthetic demo only, not as proof of a real Flagsmith deployment.
