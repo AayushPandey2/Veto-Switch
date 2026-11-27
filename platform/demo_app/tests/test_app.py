@@ -11,6 +11,7 @@ from demo_app.database import (
     get_demo_telemetry,
     set_demo_identity_flag_overrides,
 )
+from demo_app.feature_flags import FeatureFlagProvider, FeatureState
 
 
 def _settings(
@@ -53,6 +54,83 @@ def test_safe_search_returns_matching_synthetic_document(tmp_path: Path) -> None
     assert payload["variant"] == "safe_fallback"
     assert payload["count"] == 1
     assert payload["results"][0]["username"] == "demo_user_01"
+
+
+@pytest.mark.parametrize(
+    ("route", "expected_flags"),
+    [
+        ("/search", {"search_v1", "search_v2"}),
+        ("/files", {"files_v1", "files_v2"}),
+    ],
+)
+def test_route_batches_flag_evaluation_and_reports_states(
+    tmp_path: Path,
+    route: str,
+    expected_flags: set[str],
+) -> None:
+    app = create_app(
+        _settings(
+            tmp_path / "demo.sqlite3",
+            demo_mode=True,
+            allow_vulnerable_routes=True,
+        )
+    )
+    provider: FeatureFlagProvider = app.extensions["feature_flags"]
+
+    class FakeFlags:
+        @staticmethod
+        def is_feature_enabled(name: str) -> bool:
+            return False
+
+    class FakeFlagsmith:
+        calls = 0
+
+        def get_identity_flags(self, _identity: str):
+            self.calls += 1
+            return FakeFlags()
+
+    fake_flagsmith = FakeFlagsmith()
+    provider._adapter = "flagsmith"
+    provider._flagsmith = fake_flagsmith
+
+    query = {"q": "demo_user_01"} if route == "/search" else {"path": "readme.txt"}
+    query["identity"] = "demo_user_01"
+    response = app.test_client().get(route, query_string=query)
+
+    assert response.status_code == 200
+    assert response.get_json()["flag_states"] == {
+        name: "disabled" for name in expected_flags
+    }
+    assert fake_flagsmith.calls == 1
+
+
+def test_flag_evaluation_failure_is_unknown_and_fails_closed(tmp_path: Path) -> None:
+    app = create_app(
+        _settings(
+            tmp_path / "demo.sqlite3",
+            demo_mode=True,
+            allow_vulnerable_routes=True,
+        )
+    )
+    provider: FeatureFlagProvider = app.extensions["feature_flags"]
+
+    class BrokenFlagsmith:
+        def get_identity_flags(self, _identity: str):
+            raise TimeoutError("Flagsmith did not respond")
+
+    provider._adapter = "flagsmith"
+    provider._flagsmith = BrokenFlagsmith()
+
+    response = app.test_client().get(
+        "/search?q=demo_user_01&identity=demo_user_01"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["variant"] == "safe_fallback"
+    assert response.get_json()["flag_states"] == {
+        "search_v1": "unknown",
+        "search_v2": "unknown",
+    }
 
 
 def test_search_rejects_missing_and_oversized_queries(tmp_path: Path) -> None:

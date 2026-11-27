@@ -64,6 +64,13 @@ def _json(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
+def _flag_evaluation_known(payload: dict, names: tuple[str, ...]) -> bool:
+    states = payload.get("flag_states")
+    return isinstance(states, dict) and all(
+        states.get(name) in {"enabled", "disabled"} for name in names
+    )
+
+
 def _target_environment(settings: DemoSettings) -> str:
     if settings.flag_adapter == "local":
         return "local"
@@ -183,6 +190,40 @@ def _get_row(database_path: Path, query: str, values: tuple[object, ...]) -> dic
 
 def _ensure_unexpired(proposal: dict) -> None:
     if datetime.fromisoformat(proposal["expires_at"]) <= datetime.now(UTC):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "proposal_expired", "message": "Create a fresh proposal."},
+        )
+
+
+def _expire_release_proposals(database_path: Path, incident_id: str) -> None:
+    """Close expired, unapplied releases so they cannot block a fresh proposal."""
+    now = _now()
+    with get_connection(database_path) as connection:
+        expired = connection.execute(
+            "SELECT id FROM release_proposals WHERE incident_id = ? "
+            "AND status IN ('pending_approval', 'approved') AND expires_at <= ?",
+            (incident_id, now),
+        ).fetchall()
+        if expired:
+            connection.executemany(
+                "UPDATE release_proposals SET status = 'expired' "
+                "WHERE id = ? AND status IN ('pending_approval', 'approved') AND expires_at <= ?",
+                [(row["id"], now) for row in expired],
+            )
+    for row in expired:
+        _record_event(
+            database_path,
+            incident_id,
+            "release_proposal_expired",
+            "release_planner",
+            {"release_proposal_id": row["id"]},
+        )
+
+
+def _ensure_release_unexpired(database_path: Path, release: dict) -> None:
+    if datetime.fromisoformat(release["expires_at"]) <= datetime.now(UTC):
+        _expire_release_proposals(database_path, release["incident_id"])
         raise HTTPException(
             status_code=409,
             detail={"code": "proposal_expired", "message": "Create a fresh proposal."},
@@ -395,6 +436,19 @@ def create_app(
                 raise ValueError("Expected an object response.")
         except (httpx.RequestError, ValueError):
             return {"identity": identity, "status": "unknown", "reason": "demo_app_unreachable"}
+        required_flags = (
+            ("search_v1", "search_v2")
+            if scenario == "search_sqli"
+            else ("files_v1", "files_v2")
+        )
+        if not _flag_evaluation_known(payload, required_flags):
+            return {
+                "identity": identity,
+                "status": "unknown",
+                "reason": "flag_evaluation_unknown",
+                "http_status": response.status_code,
+                "variant": payload.get("variant", "unknown"),
+            }
         return {
             "identity": identity,
             "status": "observed" if response.status_code == 200 else "unknown",
@@ -493,6 +547,28 @@ def create_app(
                 "observed_at": _now(),
             }
         else:
+            required_flags = (
+                ("search_v1", "search_v2")
+                if incident["scenario"] == "search_sqli"
+                else ("files_v1", "files_v2")
+            )
+            if not _flag_evaluation_known(payload, required_flags):
+                result = {
+                    "status": "unknown",
+                    "reason": "flag_evaluation_unknown",
+                    "route": route,
+                    "http_status": response.status_code,
+                    "variant": payload.get("variant", "unknown"),
+                    "observed_at": _now(),
+                }
+                _record_event(
+                    database_path,
+                    incident["id"],
+                    "pre_change_security_check",
+                    "local_verifier",
+                    result,
+                )
+                return result
             if incident["scenario"] == "search_sqli":
                 vulnerable_variant = payload.get("variant") == "search_v1"
                 exposed_records = vulnerable_variant and payload.get("count", 0) > 0
@@ -1243,7 +1319,11 @@ def create_app(
                         params={"q": "' OR 1=1 -- "},
                     )
                     attack_payload = attack_response.json()
+                    route_flags_known = _flag_evaluation_known(
+                        attack_payload, ("search_v1", "search_v2")
+                    )
                     checks = {
+                        "route_flags_evaluated": route_flags_known,
                         "vulnerable_flag_disabled": vulnerable_flag_state is FeatureState.DISABLED,
                         "safe_or_fallback_variant_served": (
                             attack_response.status_code == 200
@@ -1264,11 +1344,16 @@ def create_app(
                         "/files",
                         params={"path": "readme.txt"},
                     )
+                    public_payload = public_response.json()
+                    route_flags_known = _flag_evaluation_known(
+                        public_payload, ("files_v1", "files_v2")
+                    )
                     checks = {
+                        "route_flags_evaluated": route_flags_known,
                         "vulnerable_flag_disabled": vulnerable_flag_state is FeatureState.DISABLED,
                         "safe_or_fallback_variant_served": (
                             public_response.status_code == 200
-                            and public_response.json().get("variant") in {"files_v2", "safe_fallback"}
+                            and public_payload.get("variant") in {"files_v2", "safe_fallback"}
                         ),
                         "traversal_blocked": traversal_response.status_code == 404,
                         "unrelated_status_route_healthy": (
@@ -1289,21 +1374,31 @@ def create_app(
             return JSONResponse(status_code=503, content=result)
 
         passed = all(checks.values())
+        evaluation_unknown = not checks.get("route_flags_evaluated", True)
         result = {
-            "status": "verified" if passed else "failed",
+            "status": "unknown" if evaluation_unknown else "verified" if passed else "failed",
             "checks": checks,
             "observed_at": _now(),
         }
-        state = "verified" if passed else "verification_failed"
+        state = (
+            "verification_unavailable"
+            if evaluation_unknown
+            else "verified"
+            if passed
+            else "verification_failed"
+        )
         _set_incident_status(database_path, incident_id, state)
         _record_event(
             database_path,
             incident_id,
-            "post_change_verification",
+            "verification_unavailable" if evaluation_unknown else "post_change_verification",
             "local_verifier",
             result,
         )
-        return JSONResponse(status_code=200 if passed else 409, content=result)
+        return JSONResponse(
+            status_code=503 if evaluation_unknown else 200 if passed else 409,
+            content=result,
+        )
 
     @app.post(
         "/incidents/{incident_id}/patch",
@@ -1409,6 +1504,7 @@ def create_app(
                 status_code=409,
                 detail={"code": "containment_verification_required"},
             )
+        _expire_release_proposals(database_path, incident_id)
         with get_connection(database_path) as connection:
             latest_test = connection.execute(
                 "SELECT result_json FROM patch_test_results WHERE incident_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -1469,7 +1565,7 @@ def create_app(
             raise HTTPException(status_code=409, detail={"code": "proposal_environment_changed"})
         if not hmac.compare_digest(payload.proposal_hash, release["proposal_hash"]):
             raise HTTPException(status_code=409, detail={"code": "proposal_hash_mismatch"})
-        _ensure_unexpired(release)
+        _ensure_release_unexpired(database_path, release)
         if release["status"] != "pending_approval":
             raise HTTPException(status_code=409, detail={"code": "proposal_not_pending"})
         decision_id = str(uuid4())
@@ -1533,7 +1629,7 @@ def create_app(
             ).fetchone()
         if existing is not None:
             return json.loads(existing["receipt_json"])
-        _ensure_unexpired(release)
+        _ensure_release_unexpired(database_path, release)
         if release["status"] != "approved" or decision is None or decision["decision"] != "approve":
             raise HTTPException(status_code=409, detail={"code": "approval_required"})
         if decision["proposal_hash"] != release["proposal_hash"]:
@@ -1594,9 +1690,26 @@ def create_app(
             )
             for item in evaluations
         }
+        evaluation_unknowns = [
+            item["identity"] for item in evaluations if item["status"] == "unknown"
+        ]
+        guardrail_violations = [
+            item["identity"]
+            for item in evaluations
+            if item["status"] == "observed"
+            and not evaluation_checks[item["identity"]]
+        ]
         verified = observed_overrides == desired and all(evaluation_checks.values()) and error_code is None
-        guardrail_violations = [identity for identity, passed in evaluation_checks.items() if not passed]
         guardrail_status = "passed" if verified else "violated" if guardrail_violations else "unknown"
+        if error_code is None and evaluation_unknowns:
+            error_code = "demo_identity_evaluation_unknown"
+        recommendation = (
+            "continue"
+            if verified
+            else "rollback_proposed"
+            if guardrail_violations
+            else "retry_verification"
+        )
         receipt = {
             "operation_id": str(uuid4()),
             "release_proposal_id": proposal_id,
@@ -1609,11 +1722,13 @@ def create_app(
             "after": observed_overrides,
             "evaluations": evaluations,
             "evaluation_checks": evaluation_checks,
+            "evaluation_unknowns": evaluation_unknowns,
             "readback_verified": observed_overrides == desired,
             "app_evaluation_verified": all(evaluation_checks.values()),
+            "app_evaluation_unknown": bool(evaluation_unknowns),
             "guardrail_status": guardrail_status,
             "guardrail_violations": guardrail_violations,
-            "recommendation": "continue" if verified else "rollback_proposed",
+            "recommendation": recommendation,
             "status": "applied" if verified else "failed",
             "executed_at": _now(),
         }
@@ -1631,12 +1746,17 @@ def create_app(
         _record_event(
             database_path,
             release["incident_id"],
-            "release_applied" if verified else "release_guardrail_violation",
+            "release_applied"
+            if verified
+            else "release_guardrail_violation"
+            if guardrail_violations
+            else "release_verification_unknown",
             decision["actor"],
             receipt,
         )
         if not verified:
-            raise HTTPException(status_code=502, detail={"code": error_code or "release_verification_failed", "receipt": receipt})
+            status_code = 503 if evaluation_unknowns and not guardrail_violations else 502
+            raise HTTPException(status_code=status_code, detail={"code": error_code or "release_verification_failed", "receipt": receipt})
         return receipt
 
     @app.post(
@@ -1666,31 +1786,13 @@ def create_app(
             ).fetchone()
         if receipt is None:
             raise HTTPException(status_code=409, detail={"code": "rollback_receipt_required"})
+        _expire_release_proposals(database_path, incident_id)
         with get_connection(database_path) as connection:
-            now = _now()
-            expired = connection.execute(
-                "SELECT id FROM release_proposals WHERE incident_id = ? "
-                "AND status IN ('pending_approval', 'approved') AND expires_at <= ?",
-                (incident_id, now),
-            ).fetchall()
-            if expired:
-                connection.executemany(
-                    "UPDATE release_proposals SET status = 'expired' WHERE id = ?",
-                    [(row["id"],) for row in expired],
-                )
             pending = connection.execute(
                 "SELECT id FROM release_proposals WHERE incident_id = ? "
                 "AND status IN ('pending_approval', 'approved', 'applying') LIMIT 1",
                 (incident_id,),
             ).fetchone()
-        for row in expired:
-            _record_event(
-                database_path,
-                incident_id,
-                "release_proposal_expired",
-                "release_planner",
-                {"release_proposal_id": row["id"]},
-            )
         if pending is not None:
             raise HTTPException(status_code=409, detail={"code": "release_change_already_pending"})
         current = identity_overrides(source["safe_flag"])

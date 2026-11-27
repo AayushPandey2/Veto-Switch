@@ -11,7 +11,7 @@ from demo_app.database import (
     record_demo_request,
     seed_demo_data,
 )
-from demo_app.feature_flags import FeatureFlagProvider
+from demo_app.feature_flags import FeatureFlagProvider, FeatureState
 from demo_app.file_service import read_public_demo_file
 from demo_app.manifest import DEMO_ONLY_ROUTES, ROUTE_MANIFEST
 from demo_app.search_service import search_documents
@@ -183,7 +183,10 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             )
 
         feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
-        if feature_flags.is_enabled("search_v2", identity=identity):
+        flag_states = feature_flags.get_states(
+            ("search_v1", "search_v2"), identity=identity
+        )
+        if flag_states["search_v2"] is FeatureState.ENABLED:
             results = search_documents(
                 app.extensions["database_path"],
                 query,
@@ -200,10 +203,11 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                     "count": len(results),
                     "results": results,
                     "identity": identity,
+                    "flag_states": {name: state.value for name, state in flag_states.items()},
                 },
             )
 
-        if feature_flags.is_enabled("search_v1", identity=identity):
+        if flag_states["search_v1"] is FeatureState.ENABLED:
             results = vulnerable_search_documents_for_demo(
                 app.extensions["database_path"],
                 query,
@@ -221,6 +225,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                     "count": len(results),
                     "results": results,
                     "identity": identity,
+                    "flag_states": {name: state.value for name, state in flag_states.items()},
                 },
             )
 
@@ -240,6 +245,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 "count": len(results),
                 "results": results,
                 "identity": identity,
+                "flag_states": {name: state.value for name, state in flag_states.items()},
             },
         )
 
@@ -258,8 +264,12 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 payload=identity_error.get_json(),
                 status_code=400,
             )
-        if not feature_flags.is_enabled("search_v1", identity=identity) or feature_flags.is_enabled(
-            "search_v2", identity=identity
+        flag_states = feature_flags.get_states(
+            ("search_v1", "search_v2"), identity=identity
+        )
+        if (
+            flag_states["search_v1"] is not FeatureState.ENABLED
+            or flag_states["search_v2"] is FeatureState.ENABLED
         ):
             return _recorded_json(
                 app.extensions["database_path"],
@@ -328,10 +338,13 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             )
 
         feature_flags: FeatureFlagProvider = app.extensions["feature_flags"]
-        if feature_flags.is_enabled("files_v2", identity=identity):
+        flag_states = feature_flags.get_states(
+            ("files_v1", "files_v2"), identity=identity
+        )
+        if flag_states["files_v2"] is FeatureState.ENABLED:
             variant = "files_v2"
             content = read_public_demo_file(file_path)
-        elif feature_flags.is_enabled("files_v1", identity=identity):
+        elif flag_states["files_v1"] is FeatureState.ENABLED:
             variant = "files_v1"
             content = vulnerable_read_demo_file_for_demo(file_path)
         else:
@@ -346,7 +359,11 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 identity=identity,
                 variant=variant,
                 outcome="not_found",
-                payload={"error": "File not found.", "variant": variant},
+                payload={
+                    "error": "File not found.",
+                    "variant": variant,
+                    "flag_states": {name: state.value for name, state in flag_states.items()},
+                },
                 status_code=404,
             )
 
@@ -355,6 +372,7 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
             "path": file_path,
             "content": content,
             "identity": identity,
+            "flag_states": {name: state.value for name, state in flag_states.items()},
         }
         if variant == "files_v1":
             payload["warning"] = "Intentionally vulnerable local demonstration."
@@ -385,8 +403,12 @@ def create_app(settings: DemoSettings | None = None) -> Flask:
                 payload=identity_error.get_json(),
                 status_code=400,
             )
-        if not feature_flags.is_enabled("files_v1", identity=identity) or feature_flags.is_enabled(
-            "files_v2", identity=identity
+        flag_states = feature_flags.get_states(
+            ("files_v1", "files_v2"), identity=identity
+        )
+        if (
+            flag_states["files_v1"] is not FeatureState.ENABLED
+            or flag_states["files_v2"] is FeatureState.ENABLED
         ):
             return _recorded_json(
                 app.extensions["database_path"],

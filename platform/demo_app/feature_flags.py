@@ -58,6 +58,69 @@ class FeatureFlagProvider:
         *,
         identity: str | None = None,
     ) -> FeatureState:
+        return self.get_states((feature_name,), identity=identity).get(
+            feature_name,
+            FeatureState.UNKNOWN,
+        )
+
+    def get_states(
+        self,
+        feature_names: tuple[str, ...] | list[str],
+        *,
+        identity: str | None = None,
+    ) -> dict[str, FeatureState]:
+        """Evaluate related flags using one Flagsmith request per identity."""
+        names = tuple(dict.fromkeys(feature_names))
+        valid_names = set(self.ENVIRONMENT_VARIABLES)
+        states: dict[str, FeatureState] = {}
+        sdk_flags = None
+
+        if self._adapter == "flagsmith" and self._flagsmith is not None:
+            try:
+                sdk_flags = (
+                    self._flagsmith.get_identity_flags(identity)
+                    if identity is not None
+                    else self._flagsmith.get_environment_flags()
+                )
+            except Exception:
+                # Do not make a second request per flag after a transient failure.
+                sdk_flags = None
+
+        for feature_name in names:
+            if feature_name not in valid_names:
+                states[feature_name] = FeatureState.UNKNOWN
+                continue
+
+            if (
+                feature_name in {"search_v1", "files_v1"}
+                and (not self._demo_mode or not self._allow_vulnerable_routes)
+            ):
+                states[feature_name] = FeatureState.DISABLED
+                continue
+
+            if self._adapter == "flagsmith":
+                if sdk_flags is None:
+                    states[feature_name] = FeatureState.UNKNOWN
+                    continue
+                try:
+                    enabled = sdk_flags.is_feature_enabled(feature_name)
+                except Exception:
+                    states[feature_name] = FeatureState.UNKNOWN
+                else:
+                    states[feature_name] = (
+                        FeatureState.ENABLED if enabled else FeatureState.DISABLED
+                    )
+                continue
+
+            states[feature_name] = self._get_local_state(feature_name, identity)
+
+        return states
+
+    def _get_local_state(
+        self,
+        feature_name: str,
+        identity: str | None,
+    ) -> FeatureState:
         variable = self.ENVIRONMENT_VARIABLES.get(feature_name)
 
         if variable is None:
@@ -68,21 +131,6 @@ class FeatureFlagProvider:
             and (not self._demo_mode or not self._allow_vulnerable_routes)
         ):
             return FeatureState.DISABLED
-
-        if self._adapter == "flagsmith":
-            if self._flagsmith is None:
-                return FeatureState.UNKNOWN
-            try:
-                flags = (
-                    self._flagsmith.get_identity_flags(identity)
-                    if identity is not None
-                    else self._flagsmith.get_environment_flags()
-                )
-                enabled = flags.is_feature_enabled(feature_name)
-            except Exception:
-                # A network or API failure must not activate vulnerable code.
-                return FeatureState.UNKNOWN
-            return FeatureState.ENABLED if enabled else FeatureState.DISABLED
 
         if identity is not None:
             identity_override = get_demo_identity_flag_override(

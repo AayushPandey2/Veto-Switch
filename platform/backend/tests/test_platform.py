@@ -418,6 +418,56 @@ def test_rollout_stage_selects_expected_number_of_fixed_identities(
     assert len(rollout.json()["selected_identities"]) == expected_count
 
 
+def test_expired_approved_rollout_is_closed_and_does_not_block_replacement(platform) -> None:
+    client, database_path = platform
+    incident, _proposal = _create_and_contain(client, "sqli", "/search")
+    client.post(f"/incidents/{incident['id']}/patch", headers=_headers())
+    patch_test = client.post(f"/incidents/{incident['id']}/patch/test", headers=_headers())
+    assert patch_test.json()["status"] == "passed"
+
+    expired_release = client.post(
+        f"/incidents/{incident['id']}/rollout",
+        headers=_headers(),
+        json={"percentage": 5},
+    ).json()
+    approved = client.post(
+        f"/release-proposals/{expired_release['id']}/decision",
+        headers=_headers(),
+        json={
+            "decision": "approve",
+            "actor": "test-operator",
+            "proposal_hash": expired_release["proposal_hash"],
+        },
+    )
+    assert approved.status_code == 200
+    with get_connection(database_path) as connection:
+        connection.execute(
+            "UPDATE release_proposals SET expires_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00+00:00", expired_release["id"]),
+        )
+
+    replacement = client.post(
+        f"/incidents/{incident['id']}/rollout",
+        headers=_headers(),
+        json={"percentage": 5},
+    )
+    assert replacement.status_code == 200
+
+    with get_connection(database_path) as connection:
+        status = connection.execute(
+            "SELECT status FROM release_proposals WHERE id = ?",
+            (expired_release["id"],),
+        ).fetchone()["status"]
+        event_count = connection.execute(
+            "SELECT COUNT(*) AS count FROM audit_events "
+            "WHERE incident_id = ? AND event_type = 'release_proposal_expired'",
+            (incident["id"],),
+        ).fetchone()["count"]
+    assert status == "expired"
+    assert event_count == 1
+    assert replacement.json()["status"] == "pending_approval"
+
+
 def test_flagsmith_mode_never_allows_local_demo_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("KILLSWITCH_DEMO_ENV", "local")
     monkeypatch.setenv("KILLSWITCH_DEMO_MODE", "false")
@@ -460,7 +510,10 @@ def test_failed_rollout_guardrail_shows_and_allows_separately_approved_rollback(
 
         @staticmethod
         def json() -> dict[str, str]:
-            return {"variant": "safe_fallback"}
+            return {
+                "variant": "safe_fallback",
+                "flag_states": {"search_v1": "disabled", "search_v2": "disabled"},
+            }
 
     with monkeypatch.context() as patcher:
         patcher.setattr("backend.app.httpx.get", lambda *_args, **_kwargs: WrongEvaluation())
@@ -519,3 +572,50 @@ def test_failed_rollout_guardrail_shows_and_allows_separately_approved_rollback(
     )
     assert restored.status_code == 200
     assert restored.json()["app_evaluation_verified"] is True
+
+
+def test_unknown_demo_flag_evaluation_is_not_reported_as_guardrail_violation(
+    platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _database_path = platform
+    incident, _proposal = _create_and_contain(client, "sqli", "/search")
+    client.post(f"/incidents/{incident['id']}/patch", headers=_headers())
+    patch_test = client.post(f"/incidents/{incident['id']}/patch/test", headers=_headers())
+    assert patch_test.json()["status"] == "passed"
+    release = client.post(
+        f"/incidents/{incident['id']}/rollout",
+        headers=_headers(),
+        json={"percentage": 5},
+    ).json()
+    approved = client.post(
+        f"/release-proposals/{release['id']}/decision",
+        headers=_headers(),
+        json={"decision": "approve", "actor": "test-operator", "proposal_hash": release["proposal_hash"]},
+    )
+    assert approved.status_code == 200
+
+    class UnknownEvaluation:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict[str, str | dict[str, str]]:
+            return {
+                "variant": "safe_fallback",
+                "flag_states": {"search_v1": "disabled", "search_v2": "unknown"},
+            }
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr("backend.app.httpx.get", lambda *_args, **_kwargs: UnknownEvaluation())
+        failed_apply = client.post(
+            f"/release-proposals/{release['id']}/apply",
+            headers=_headers(),
+            json={"proposal_hash": release["proposal_hash"]},
+        )
+
+    assert failed_apply.status_code == 503
+    receipt = failed_apply.json()["detail"]["receipt"]
+    assert receipt["guardrail_status"] == "unknown"
+    assert receipt["guardrail_violations"] == []
+    assert receipt["app_evaluation_unknown"] is True
+    assert receipt["recommendation"] == "retry_verification"

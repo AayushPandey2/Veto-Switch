@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
 import httpx
 import pytest
 
@@ -51,6 +54,43 @@ def test_management_api_does_not_retry_identity_creation_post(monkeypatch: pytes
 
     assert error.value.code == "flagsmith_unavailable"
     assert attempts == ["POST"]
+
+
+def test_identity_override_reads_use_bounded_parallel_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client()
+    identities = tuple(f"demo_user_{index:02d}" for index in range(1, 10))
+    active = 0
+    peak_active = 0
+    lock = threading.Lock()
+
+    def read_state(identity_id, _feature_id, _feature_names):
+        nonlocal active, peak_active
+        with lock:
+            active += 1
+            peak_active = max(peak_active, active)
+        time.sleep(0.03)
+        with lock:
+            active -= 1
+        return {"id": identity_id, "enabled": identity_id % 2 == 0}
+
+    monkeypatch.setattr(client, "_read_feature_names", lambda: {"5": "search_v2"})
+    monkeypatch.setattr(client, "_uses_v2_feature_versioning", lambda: False)
+    monkeypatch.setattr(
+        client,
+        "_identities_by_identifier",
+        lambda: {identity: index for index, identity in enumerate(identities, 1)},
+    )
+    monkeypatch.setattr(client, "_identity_feature_state", read_state)
+
+    result = client.read_identity_feature_overrides(identities, "search_v2")
+
+    assert result == {
+        identity: index % 2 == 0
+        for index, identity in enumerate(identities, 1)
+    }
+    assert 1 < peak_active <= 4
 
 
 def test_identity_override_is_created_and_read_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,6 +167,85 @@ def test_identity_override_delete_accepts_404_when_readback_confirms_absence(
 
     assert result == {"demo_user_01": None}
     assert any(method == "DELETE" for method, _ in requests)
+
+
+def test_versioned_identity_overrides_use_live_edge_identity_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests = []
+    state_exists = False
+    state_enabled = False
+
+    def request(method: str, url: str, **kwargs):
+        nonlocal state_exists, state_enabled
+        requests.append((method, url, kwargs.get("json")))
+        req = httpx.Request(method, url)
+        if url.endswith("/environments/fake-environment-key/"):
+            return httpx.Response(
+                200,
+                json={"id": 123, "project": 12, "use_v2_feature_versioning": True},
+                request=req,
+            )
+        if url.endswith("/projects/12/features/"):
+            return httpx.Response(200, json=[{"id": 5, "name": "search_v2"}], request=req)
+        if url.endswith("/edge-identities/?page_size=100"):
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {"identity_uuid": "identity-uuid", "identifier": "demo_user_01"}
+                    ],
+                    "last_evaluated_key": None,
+                },
+                request=req,
+            )
+        if url.endswith("/edge-featurestates/") and method == "GET":
+            states = (
+                [
+                    {
+                        "featurestate_uuid": "featurestate-uuid",
+                        "feature": 5,
+                        "enabled": state_enabled,
+                    }
+                ]
+                if state_exists
+                else []
+            )
+            return httpx.Response(200, json=states, request=req)
+        if url.endswith("/edge-featurestates/") and method == "POST":
+            assert kwargs["json"] == {"feature": 5, "enabled": True}
+            state_exists = True
+            state_enabled = True
+            return httpx.Response(
+                201,
+                json={
+                    "featurestate_uuid": "featurestate-uuid",
+                    "feature": 5,
+                    "enabled": True,
+                },
+                request=req,
+            )
+        if url.endswith("/edge-featurestates/featurestate-uuid/") and method == "DELETE":
+            state_exists = False
+            return httpx.Response(204, request=req)
+        raise AssertionError(f"Unexpected mocked request: {method} {url}")
+
+    monkeypatch.setattr("backend.flagsmith_client.httpx.request", request)
+    client = _client()
+
+    assert client.read_identity_feature_overrides(("demo_user_01",), "search_v2") == {
+        "demo_user_01": None
+    }
+    assert client.apply_identity_feature_overrides(
+        {"demo_user_01": True}, "search_v2"
+    ) == {"demo_user_01": True}
+    assert client.apply_identity_feature_overrides(
+        {"demo_user_01": None}, "search_v2"
+    ) == {"demo_user_01": None}
+
+    assert any(method == "POST" and "/edge-featurestates/" in url for method, url, _ in requests)
+    assert any(method == "DELETE" and "/edge-featurestates/featurestate-uuid/" in url for method, url, _ in requests)
+    assert not any("/identities/44/featurestates/" in url for _, url, _ in requests)
 
 
 def test_identity_override_delete_keeps_404_failure_when_state_remains(

@@ -32,14 +32,16 @@ In the private, ignored `.env`, set `KILLSWITCH_FLAG_ADAPTER=flagsmith` and fill
 
 If a required flag is missing or ambiguous, the API returns a capability error and coverage shows an unknown state. Create or correct the flag in Flagsmith, then refresh the dashboard. Flag evaluation is confirmed by calling the running demo app after Management API readback; if the SDK has not observed the change, the result stays failed or unknown. Management requests use bounded retries for transient errors.
 
-The management adapter uses Flagsmith's private Management API; the demo app evaluates flags on the server. Keep the Management API credential out of the browser. See the [Flagsmith Management API documentation](https://docs.flagsmith.com/integrating-with-flagsmith/flagsmith-api-overview/management-api) and [authentication guidance](https://docs.flagsmith.com/integrating-with-flagsmith/flagsmith-api-overview/management-api/authentication).
+Each demo route evaluates its related flags in one server-side Flagsmith read and returns the observed `flag_states`. A safe fallback remains available when evaluation is unknown, but the operator API records verification as unknown rather than claiming the flags were confirmed off.
+
+The management adapter uses Flagsmith's private Management API; it detects versioned environments and reads/writes identity overrides through the live edge-identity API. The demo app evaluates flags on the server. Keep the Management API credential out of the browser. See the [Flagsmith Management API documentation](https://docs.flagsmith.com/integrating-with-flagsmith/flagsmith-api-overview/management-api) and [authentication guidance](https://docs.flagsmith.com/integrating-with-flagsmith/flagsmith-api-overview/management-api/authentication).
 
 ### Flagsmith troubleshooting
 
 - If `/flags/coverage` reports `unknown` or a gap, confirm the four feature names exist in the selected Development environment and the private `.env` points to that same environment. Feature creation is manual in this demo.
 - If the Management API rejects a read or update, keep the incident unverified. Check the Management API credential and environment permissions in Flagsmith, update the ignored `.env` locally if needed, then restart Compose. Never copy the credential into a report, screenshot, browser code or chat.
 - If Management API readback succeeds but the demo app still reports the previous variant, treat verification as pending/failed and retry after the Flagsmith SDK observes the update. Do not call the change contained until the app evaluation and the post-change check both pass.
-- If a staged rollout fails its identity checks, the incident stores the failed identities and a `rollback_proposed` recommendation. Use **Propose rollback**, review that separate proposal and approve it before applying; no automatic rollback occurs.
+- If a staged rollout observes a known identity guardrail violation, the incident stores the failed identities and a `rollback_proposed` recommendation. If flag evaluation is unknown, it records the affected identities as unknown and recommends retrying verification first. Rollback remains a separate proposal with its own approval; no automatic rollback occurs.
 - If a rollback reports an API 404 while an override has already disappeared, compare the identity's current Flagsmith state and the demo app's live evaluation before retrying. The adapter treats a delete 404 as successful only when a fresh read confirms the override is absent; any remaining or unreadable state stays failed/unknown.
 
 ## Demo safety settings

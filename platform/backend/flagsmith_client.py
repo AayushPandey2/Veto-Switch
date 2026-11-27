@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import time
-from urllib.parse import quote, urljoin, urlparse
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote, urlencode, urljoin, urlparse
 
 import httpx
 
@@ -195,6 +196,8 @@ class FlagsmithManagementClient:
         feature_name: str,
     ) -> bool | None:
         """Return an explicit identity override, or None when it inherits."""
+        if self._uses_v2_feature_versioning():
+            return self.read_identity_feature_overrides((identifier,), feature_name)[identifier]
         identity_id = self._identity_id(identifier, create=False)
         feature_names = self._read_feature_names()
         feature_id = self._feature_id(feature_name, feature_names)
@@ -208,15 +211,45 @@ class FlagsmithManagementClient:
     ) -> dict[str, bool | None]:
         feature_names = self._read_feature_names()
         feature_id = self._feature_id(feature_name, feature_names)
+        if self._uses_v2_feature_versioning():
+            identity_ids = self._edge_identities_by_identifier(identifiers)
+            result: dict[str, bool | None] = {identifier: None for identifier in identifiers}
+            existing = [
+                (identifier, identity_ids[identifier])
+                for identifier in identifiers
+                if identifier in identity_ids
+            ]
+
+            def read_state(item: tuple[str, str]) -> tuple[str, bool | None]:
+                identifier, identity_uuid = item
+                state = self._edge_identity_feature_state(identity_uuid, feature_id)
+                return identifier, None if state is None else state["enabled"]
+
+            if existing:
+                with ThreadPoolExecutor(max_workers=min(4, len(existing))) as executor:
+                    for identifier, enabled in executor.map(read_state, existing):
+                        result[identifier] = enabled
+            return result
+
         identity_ids = self._identities_by_identifier()
-        result: dict[str, bool | None] = {}
-        for identifier in identifiers:
-            identity_id = identity_ids.get(identifier)
-            if identity_id is None:
-                result[identifier] = None
-                continue
+        result: dict[str, bool | None] = {identifier: None for identifier in identifiers}
+        existing = [
+            (identifier, identity_ids[identifier])
+            for identifier in identifiers
+            if identifier in identity_ids
+        ]
+
+        def read_state(item: tuple[str, str | int]) -> tuple[str, bool | None]:
+            identifier, identity_id = item
             state = self._identity_feature_state(identity_id, feature_id, feature_names)
-            result[identifier] = None if state is None else state["enabled"]
+            return identifier, None if state is None else state["enabled"]
+
+        if existing:
+            # Keep concurrency bounded while avoiding one serial API round trip
+            # per seeded demo identity during rollout planning/readback.
+            with ThreadPoolExecutor(max_workers=min(4, len(existing))) as executor:
+                for identifier, enabled in executor.map(read_state, existing):
+                    result[identifier] = enabled
         return result
 
     def apply_identity_feature_overrides(
@@ -227,6 +260,55 @@ class FlagsmithManagementClient:
         """Apply a set of approved per-identity changes and verify exact readback."""
         feature_names = self._read_feature_names()
         feature_id = self._feature_id(feature_name, feature_names)
+        if self._uses_v2_feature_versioning():
+            identities = self._edge_identities_by_identifier(tuple(values))
+            for identifier, enabled in values.items():
+                if not identifier or len(identifier) > 128:
+                    raise FlagsmithIntegrationError("identity_identifier_invalid")
+                identity_uuid = identities.get(identifier)
+                if identity_uuid is None:
+                    if enabled is None:
+                        continue
+                    raise FlagsmithIntegrationError("edge_identity_not_found")
+
+                state = self._edge_identity_feature_state(identity_uuid, feature_id)
+                if enabled is None:
+                    if state is not None:
+                        self._delete_edge_identity_feature_state(
+                            identity_uuid, feature_id, state["uuid"]
+                        )
+                    continue
+                if state is not None and state["enabled"] is enabled:
+                    continue
+
+                url = self._edge_identity_feature_collection_url(identity_uuid)
+                if state is None:
+                    self._request(
+                        "POST", url, json={"feature": feature_id, "enabled": enabled}
+                    )
+                else:
+                    self._request(
+                        "PUT",
+                        self._edge_identity_feature_state_url(identity_uuid, state["uuid"]),
+                        json={
+                            "feature": feature_id,
+                            "enabled": enabled,
+                            **{
+                                key: state[key]
+                                for key in (
+                                    "feature_state_value",
+                                    "multivariate_feature_state_values",
+                                )
+                                if key in state
+                            },
+                        },
+                    )
+
+            readback = self.read_identity_feature_overrides(tuple(values), feature_name)
+            if readback != values:
+                raise FlagsmithIntegrationError("identity_override_readback_failed")
+            return readback
+
         identities = self._identities_by_identifier()
         for identifier, enabled in values.items():
             if not identifier or len(identifier) > 128:
@@ -281,6 +363,11 @@ class FlagsmithManagementClient:
         enabled: bool,
     ) -> bool:
         """Create or update one Flagsmith identity override and read it back."""
+        if self._uses_v2_feature_versioning():
+            result = self.apply_identity_feature_overrides(
+                {identifier: enabled}, feature_name
+            )
+            return result[identifier] is enabled
         identity_id = self._identity_id(identifier, create=True)
         feature_names = self._read_feature_names()
         feature_id = self._feature_id(feature_name, feature_names)
@@ -310,6 +397,20 @@ class FlagsmithManagementClient:
         feature_name: str,
     ) -> None:
         """Remove an explicit override so the identity inherits environment state."""
+        if self._uses_v2_feature_versioning():
+            identity_uuid = self._edge_identities_by_identifier((identifier,)).get(identifier)
+            if identity_uuid is None:
+                return
+            feature_names = self._read_feature_names()
+            feature_id = self._feature_id(feature_name, feature_names)
+            state = self._edge_identity_feature_state(identity_uuid, feature_id)
+            if state is not None:
+                self._delete_edge_identity_feature_state(
+                    identity_uuid, feature_id, state["uuid"]
+                )
+            if self.read_identity_feature_override(identifier, feature_name) is not None:
+                raise FlagsmithIntegrationError("identity_override_readback_failed")
+            return
         identity_id = self._identity_id(identifier, create=False)
         feature_names = self._read_feature_names()
         feature_id = self._feature_id(feature_name, feature_names)
@@ -372,6 +473,123 @@ class FlagsmithManagementClient:
             identities.extend(page)
             next_url = urljoin(next_url, next_link) if isinstance(next_link, str) else None
         return identities
+
+    def _uses_v2_feature_versioning(self) -> bool:
+        environment = self._read_environment()
+        return environment.get("use_v2_feature_versioning") is True
+
+    def _edge_identities_by_identifier(
+        self,
+        identifiers: tuple[str, ...],
+    ) -> dict[str, str]:
+        """Return versioned edge identity UUIDs for the requested identifiers."""
+        collection_url = (
+            f"{self._api_url}/environments/{self._environment_key}/edge-identities/"
+        )
+        next_url: str | None = f"{collection_url}?{urlencode({'page_size': 100})}"
+        found: dict[str, str] = {}
+        requested = set(identifiers)
+        cursors: set[str] = set()
+        pages = 0
+        while next_url is not None:
+            pages += 1
+            if pages > 20:
+                raise FlagsmithIntegrationError("edge_identity_list_page_limit")
+            self._validate_next_url(next_url)
+            payload = self._request("GET", next_url)
+            if isinstance(payload, list):
+                page = payload
+                cursor = None
+            elif isinstance(payload, dict) and isinstance(payload.get("results"), list):
+                page = payload["results"]
+                cursor = payload.get("last_evaluated_key")
+            else:
+                raise FlagsmithIntegrationError("edge_identity_list_response_invalid")
+            if any(not isinstance(item, dict) for item in page):
+                raise FlagsmithIntegrationError("edge_identity_list_response_invalid")
+            for item in page:
+                identifier = item.get("identifier")
+                identity_uuid = item.get("identity_uuid")
+                if identifier not in requested:
+                    continue
+                if not isinstance(identity_uuid, str) or not identity_uuid:
+                    raise FlagsmithIntegrationError("edge_identity_response_invalid")
+                if identifier in found and found[identifier] != identity_uuid:
+                    raise FlagsmithIntegrationError("identity_ambiguous")
+                found[identifier] = identity_uuid
+            if isinstance(cursor, str) and cursor:
+                if cursor in cursors:
+                    raise FlagsmithIntegrationError("edge_identity_list_cursor_invalid")
+                cursors.add(cursor)
+                next_url = f"{collection_url}?{urlencode({'page_size': 100, 'last_evaluated_key': cursor})}"
+            else:
+                next_url = None
+        return found
+
+    def _edge_identity_feature_state(
+        self,
+        identity_uuid: str,
+        feature_id: str | int,
+    ) -> dict | None:
+        payload = self._request(
+            "GET", self._edge_identity_feature_collection_url(identity_uuid)
+        )
+        if isinstance(payload, list):
+            states = payload
+        elif isinstance(payload, dict) and isinstance(payload.get("results"), list):
+            states = payload["results"]
+        else:
+            raise FlagsmithIntegrationError("edge_identity_featurestate_response_invalid")
+        matches = [
+            state for state in states
+            if isinstance(state, dict) and str(state.get("feature")) == str(feature_id)
+        ]
+        if len(matches) > 1:
+            raise FlagsmithIntegrationError("identity_featurestate_ambiguous")
+        if not matches:
+            return None
+        state = matches[0]
+        state_uuid = state.get("featurestate_uuid")
+        enabled = state.get("enabled")
+        if not isinstance(state_uuid, str) or not isinstance(enabled, bool):
+            raise FlagsmithIntegrationError("edge_identity_featurestate_invalid")
+        return {
+            "uuid": state_uuid,
+            "enabled": enabled,
+            **{
+                key: state[key]
+                for key in (
+                    "feature_state_value",
+                    "multivariate_feature_state_values",
+                )
+                if key in state
+            },
+        }
+
+    def _delete_edge_identity_feature_state(
+        self,
+        identity_uuid: str,
+        feature_id: str | int,
+        state_uuid: str,
+    ) -> None:
+        try:
+            self._request(
+                "DELETE", self._edge_identity_feature_state_url(identity_uuid, state_uuid)
+            )
+        except FlagsmithIntegrationError as exc:
+            if exc.status_code != 404:
+                raise
+            if self._edge_identity_feature_state(identity_uuid, feature_id) is not None:
+                raise exc
+
+    def _edge_identity_feature_collection_url(self, identity_uuid: str) -> str:
+        return (
+            f"{self._api_url}/environments/{self._environment_key}/edge-identities/"
+            f"{quote(identity_uuid, safe='')}/edge-featurestates/"
+        )
+
+    def _edge_identity_feature_state_url(self, identity_uuid: str, state_uuid: str) -> str:
+        return f"{self._edge_identity_feature_collection_url(identity_uuid)}{quote(state_uuid, safe='')}/"
 
     def _identity_id(self, identifier: str, *, create: bool) -> str | int:
         if not identifier or len(identifier) > 128:
