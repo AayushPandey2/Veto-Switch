@@ -973,23 +973,47 @@ def create_app(
         dependencies=[Depends(require_operator)],
     )
     def propose_rollout(incident_id: str, payload: RolloutRequest) -> dict:
-        _get_row(
+        incident = _get_row(
             database_path,
-            "SELECT id FROM incidents WHERE id = ?",
+            "SELECT id, status FROM incidents WHERE id = ?",
             (incident_id,),
         )
+        if incident["status"] != "verified":
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "containment_verification_required"},
+            )
+
+        with get_connection(database_path) as connection:
+            users = connection.execute(
+                "SELECT username, department FROM users ORDER BY id"
+            ).fetchall()
+        eligible_users = [dict(user) for user in users]
+        selected_count = (len(eligible_users) * payload.percentage + 99) // 100
+        ranked_users = sorted(
+            eligible_users,
+            key=lambda user: hashlib.sha256(
+                f"{incident_id}:{user['username']}".encode("utf-8")
+            ).hexdigest(),
+        )
+        selected_users = ranked_users[:selected_count]
         result = {
-            "status": "hold",
+            "status": "preview_only",
+            "incident_id": incident_id,
             "requested_percentage": payload.percentage,
+            "eligible_count": len(eligible_users),
+            "selected_count": len(selected_users),
+            "selected_identities": selected_users,
+            "deterministic": True,
             "applied": False,
-            "reason": "staged_targeting_not_configured",
-            "message": "No Flagsmith targeting change was made; staged rollout is not wired yet.",
+            "targeting_changed": False,
+            "message": "Synthetic cohort preview only. No Flagsmith targeting or flags were changed.",
         }
         _record_event(
             database_path,
             incident_id,
-            "rollout_held",
-            "rollout_gate",
+            "rollout_previewed",
+            "local_rollout_preview",
             result,
         )
         return result
