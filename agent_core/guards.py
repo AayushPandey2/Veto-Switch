@@ -941,11 +941,21 @@ def guard_deployment_verification(
             f"Deployment status={dep.deployment_status.value!r}, addressable={dep.addressable}.",
             missing=["observed_addressable_deployment"],
         )
-    if incident.active_patch_hash and dep.implementation_hash != incident.active_patch_hash:
+    ptr = context.patch_test_result
+    revision_bound = (
+        ptr is not None
+        and ptr.is_trusted_pass
+        and dep.source_revision == ptr.tested_source_revision
+    )
+    if (
+        incident.active_patch_hash
+        and dep.implementation_hash != incident.active_patch_hash
+        and not revision_bound
+    ):
         return _fail(
             "deployment_verification",
             "DEPLOYMENT_IMPLEMENTATION_MISMATCH",
-            "Deployed implementation hash does not match tested patch candidate hash.",
+            "Deployed implementation does not match tested patch candidate hash or revision.",
             missing=["matching_deployed_implementation"],
         )
     return _ok(

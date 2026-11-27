@@ -2165,6 +2165,18 @@ class EvidenceReport(KillswitchModel):
     generated_at: UtcDatetime = Field(
         default_factory=utc_now, description="UTC report generation timestamp."
     )
+    report_schema_version: str = Field(default=SCHEMA_VERSION, min_length=1)
+    reporting_policy_version: str = Field(default=POLICY_VERSION, min_length=1)
+    snapshot_sequence: StrictInt | None = Field(default=None, ge=1)
+    snapshot_fingerprint: str | None = None
+    feature_mapping_results: list[dict[str, Any]] = Field(default_factory=list)
+    blast_radius_analysis: list[dict[str, Any]] = Field(default_factory=list)
+    feature_state_observations: list[FeatureState] = Field(default_factory=list)
+    verified_safe_state_history: list[VerifiedSafeState] = Field(default_factory=list)
+    artifact_integrity_results: list[dict[str, Any]] = Field(default_factory=list)
+    claim_evidence_links: list[dict[str, Any]] = Field(default_factory=list)
+    cross_record_inconsistencies: list[str] = Field(default_factory=list)
+    redaction_summary: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _enforce_report_consistency(self) -> EvidenceReport:

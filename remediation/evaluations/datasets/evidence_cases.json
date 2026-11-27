@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "description": "Independently labeled synthetic evaluation dataset for Phase 11 Incident Evidence Intelligence.",
+    "provenance": "reference_fixture",
+    "version": "1.0.0"
+  },
+  "cases": [
+    {"case_id": "ev_01", "scenario": "Valid complete accepted event history", "expected": "reconstructed"},
+    {"case_id": "ev_02", "scenario": "Missing event sequence", "expected": "integrity_diagnostic"},
+    {"case_id": "ev_03", "scenario": "Mixed incident IDs", "expected": "cross_record_issue"},
+    {"case_id": "ev_04", "scenario": "Missing original artifact bytes", "expected": "metadata_only"},
+    {"case_id": "ev_05", "scenario": "Artifact hash mismatch", "expected": "hash_mismatch"},
+    {"case_id": "ev_06", "scenario": "Cross-incident artifact", "expected": "incident_mismatch"},
+    {"case_id": "ev_07", "scenario": "Flag receipt without readback", "expected": "unverified_claim"},
+    {"case_id": "ev_08", "scenario": "Patch tested but undeployed in RECOVERED", "expected": "incomplete"},
+    {"case_id": "ev_09", "scenario": "Sensitive token in nested data", "expected": "redacted"},
+    {"case_id": "ev_10", "scenario": "Same immutable snapshot exported twice", "expected": "reproducible"},
+    {"case_id": "ev_11", "scenario": "Export file modified", "expected": "bundle_invalid"},
+    {"case_id": "ev_12", "scenario": "Coverage report unavailable", "expected": "explicit_missing_section"}
+  ]
+}

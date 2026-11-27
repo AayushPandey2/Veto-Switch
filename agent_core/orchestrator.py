@@ -1652,6 +1652,232 @@ class IncidentOrchestrator:
         )
         return verify_res, res
 
+    async def execute_rollout_planning(
+        self,
+        *,
+        incident_id: str,
+        eligibility_context: Any,
+        release_manager: Any = None,
+        actor: str = "release_intelligence_engine",
+    ) -> tuple[Any, Any, EventProcessingResult]:
+        """Run Phase 09 eligibility gate, build 5/25/50/100 plan, emit ROLLOUT_PLAN_CREATED."""
+        from remediation.rollout_agent import DeterministicReleaseManager
+
+        mgr = release_manager or DeterministicReleaseManager()
+        gate, plan = mgr.plan_rollout(eligibility_context)
+        incident = await self.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=incident.incident_id,
+            event_type=EventType.ROLLOUT_PLAN_CREATED,
+            actor=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            sequence_number=incident.latest_event_sequence + 1,
+            correlation_id=incident.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "plan_id": plan.plan_id,
+                "eligible": gate.eligible,
+                "status": gate.status.value,
+            },
+        )
+        ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            patch_test_result=eligibility_context.patch_test_result,
+            deployment_evidence=eligibility_context.deployment_evidence,
+            rollout_plan=plan,
+            feature_state=eligibility_context.current_feature_state,
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=ctx,
+        )
+        return gate, plan, res
+
+    async def evaluate_active_rollout_stage(
+        self,
+        *,
+        incident_id: str,
+        plan: Any,
+        telemetry: Any,
+        baseline: Any = None,
+        current_stage_id: str | None = None,
+        observed_exposure: int | None = None,
+        observed_revision: str | None = None,
+        release_manager: Any = None,
+        actor: str = "release_intelligence_engine",
+    ) -> tuple[Any, EventProcessingResult]:
+        """Evaluate active rollout stage telemetry and emit guarded decision event."""
+        from remediation.rollout_agent import DeterministicReleaseManager
+        from shared.enums import RolloutDecisionType
+
+        mgr = release_manager or DeterministicReleaseManager()
+        bundle = mgr.evaluate_stage_full(
+            plan=plan,
+            telemetry=telemetry,
+            baseline=baseline,
+            current_stage_id=current_stage_id,
+            observed_exposure=observed_exposure,
+            observed_revision=observed_revision,
+            live_mode=not self._fixture_mode,
+            evaluation_time=self._clock.now(),
+        )
+        incident = await self.get_incident(incident_id)
+        if incident is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        if bundle.decision.decision_type == RolloutDecisionType.ADVANCE:
+            event_type = EventType.ROLLOUT_ADVANCE_PROPOSED
+        else:
+            event_type = EventType.ROLLOUT_HOLD
+
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=incident.incident_id,
+            event_type=event_type,
+            actor=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            sequence_number=incident.latest_event_sequence + 1,
+            correlation_id=incident.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "plan_id": plan.plan_id,
+                "decision_id": bundle.decision.decision_id,
+                "decision_type": bundle.decision.decision_type.value,
+                "current_stage_id": bundle.decision.current_stage_id,
+                "proposed_next_stage_id": bundle.decision.proposed_next_stage_id,
+            },
+        )
+        ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+            rollout_plan=plan,
+            rollout_decision=bundle.decision,
+            metric_snapshot=telemetry,
+            baseline_snapshot=baseline,
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=ctx,
+        )
+        return bundle, res
+
+    async def execute_evidence_reporting(
+        self,
+        *,
+        incident_id: str,
+        reporter: Any = None,
+        actor: str = "evidence_reporter_engine",
+    ) -> tuple[Any, str, dict[str, Any], EventProcessingResult]:
+        """Run Phase 11 deterministic IncidentEvidenceReporter and emit EVIDENCE_EXPORTED."""
+        from remediation.evidence import IncidentEvidenceReporter
+        from remediation.reporting.models import EvidenceReportContext, SnapshotBoundary
+
+        inc = await self.get_incident(incident_id)
+        if inc is None:
+            raise ContractValidationError(f"Unknown incident {incident_id!r}.")
+
+        events = await self._repo.list_incident_events(incident_id)
+        artifacts = (
+            await self._evidence_repo.list_incident_artifacts(incident_id)
+            if self._evidence_repo is not None
+            else []
+        )
+        contents: dict[str, bytes] = {}
+        if self._evidence_repo is not None and hasattr(
+            self._evidence_repo, "read_artifact_content"
+        ):
+            for ref in artifacts:
+                raw = await self._evidence_repo.read_artifact_content(
+                    ref.artifact_id, incident_id=incident_id
+                )
+                if raw is not None:
+                    contents[ref.artifact_id] = raw
+
+        snapshot = SnapshotBoundary(
+            incident_version=inc.incident_version,
+            maximum_event_sequence=events[-1].sequence_number if events else 0,
+            latest_event_id=events[-1].event_id if events else None,
+            snapshot_captured_at=self._clock.now(),
+        )
+        ctx = EvidenceReportContext(
+            incident_id=inc.incident_id,
+            environment=inc.environment,
+            incident_status=inc.current_state,
+            accepted_events=events,
+            artifact_references=artifacts,
+            artifact_contents=contents,
+            snapshot_boundary=snapshot,
+            generation_timestamp=self._clock.now(),
+            fixture_mode=self._fixture_mode,
+        )
+        rep_engine = reporter or IncidentEvidenceReporter()
+        report, missing_items = rep_engine.build_report_with_details(ctx)
+        md = rep_engine.render_markdown(report, context=ctx, missing_items=missing_items)
+        js = rep_engine.render_json(report, context=ctx, missing_items=missing_items)
+
+        producer = ProducerContext(
+            producer_id=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            authenticated=True,
+            provenance_mode="fixture" if self._fixture_mode else "live",
+        )
+        evt_id = generate_event_id()
+        event = IncidentEvent(
+            event_id=evt_id,
+            incident_id=inc.incident_id,
+            event_type=EventType.EVIDENCE_EXPORTED,
+            actor=actor,
+            actor_type=ActorType.DETERMINISTIC_ENGINE,
+            sequence_number=inc.latest_event_sequence + 1,
+            correlation_id=inc.correlation_id,
+            idempotency_token=f"idem_{evt_id}",
+            timestamp_utc=self._clock.now(),
+            payload={
+                "report_id": report.report_id,
+                "completeness": report.completeness.value,
+                "snapshot_sequence": snapshot.maximum_event_sequence,
+            },
+        )
+        t_ctx = TransitionContext(
+            producer_context=producer,
+            clock=self._clock,
+            fixture_mode=self._fixture_mode,
+            route_registry=self._route_registry,
+        )
+        res = await self.process_event(
+            event,
+            producer_context=producer,
+            transition_context=t_ctx,
+        )
+        return report, md, js, res
+
 
 async def on_incident_event(
     event: IncidentEvent,

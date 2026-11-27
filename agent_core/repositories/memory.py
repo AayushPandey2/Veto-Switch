@@ -217,3 +217,12 @@ class InMemoryOrchestrationRepository(OrchestrationRepository, EvidenceRepositor
     async def list_incident_artifacts(self, incident_id: str) -> list[ArtifactReference]:
         async with self._lock:
             return [ref for ref in self._artifacts.values() if ref.incident_id == incident_id]
+
+    async def read_artifact_content(
+        self, artifact_id: str, *, incident_id: str
+    ) -> bytes | None:
+        async with self._lock:
+            ref = self._artifacts.get(artifact_id)
+            if ref is None or ref.incident_id != incident_id:
+                return None
+            return self._artifact_bytes.get(artifact_id)

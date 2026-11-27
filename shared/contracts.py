@@ -152,6 +152,17 @@ class EvidenceRepository(Protocol):
 
 
 @runtime_checkable
+class EvidenceContentReader(Protocol):
+    """Read-only capability protocol for retrieving stored original artifact bytes."""
+
+    async def read_artifact_content(
+        self, artifact_id: str, *, incident_id: str
+    ) -> bytes | None:
+        """Return original artifact bytes if authorized and owned by incident_id."""
+        ...
+
+
+@runtime_checkable
 class FeatureStateReader(Protocol):
     """Strictly read-only feature-flag observation contract for AI and policy layers.
 

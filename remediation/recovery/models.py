@@ -85,6 +85,44 @@ class RollbackContext(KillswitchModel):
     dependency_graph_changed: StrictBool = False
     manual_external_modification_detected: StrictBool = False
 
+    @classmethod
+    def from_rollout_handoff(
+        cls,
+        handoff: Any,
+        *,
+        current_observed_feature_state: FeatureState | None = None,
+        current_legacy_feature_state: FeatureState | None = None,
+        deployment_evidence: DeploymentEvidence | None = None,
+        rollout_decision: RolloutDecision | None = None,
+        triggering_telemetry: MetricSnapshot | None = None,
+        executor_capabilities: ExecutorCapabilities | None = None,
+        fixture_mode: bool = False,
+    ) -> RollbackContext:
+        """Construct a RollbackContext directly from a Phase 09 RollbackHandoffContext."""
+        return cls(
+            incident_id=handoff.incident_id,
+            plan_id=handoff.plan_id,
+            current_stage_id=handoff.current_stage_id,
+            current_observed_exposure=handoff.current_observed_exposure,
+            current_targeting_configuration=dict(handoff.current_targeting_configuration),
+            current_targeting_version=handoff.targeting_version,
+            current_observed_feature_state=current_observed_feature_state,
+            target_feature=handoff.target_feature,
+            environment=handoff.environment,
+            active_candidate_identity=handoff.candidate_identity,
+            verified_patch_revision=handoff.deployment_revision,
+            deployment_evidence=deployment_evidence,
+            rollout_decision=rollout_decision,
+            failed_guardrails=list(handoff.failed_guardrails),
+            triggering_telemetry=triggering_telemetry,
+            security_regression_result=handoff.security_regression_result,
+            known_vulnerable_implementations=[handoff.known_vulnerable_legacy_feature],
+            current_legacy_feature_state=current_legacy_feature_state,
+            executor_capabilities=executor_capabilities or ExecutorCapabilities(),
+            evidence_references=list(handoff.triggering_evidence_ids),
+            fixture_mode=fixture_mode,
+        )
+
 
 class CheckpointInvalidation(KillswitchModel):
     """Explicit reason why a historical VerifiedSafeState was invalidated."""
