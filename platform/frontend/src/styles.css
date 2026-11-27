@@ -184,6 +184,14 @@ h1 { margin-bottom: 7px; color: #f0f6f2; font-family: var(--display); font-size:
 .proposal-hint { margin: 12px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .action-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
 .rollout-note { margin: 8px 0 0; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.rollout-preview { margin: 0 17px 15px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #101a15; }
+.rollout-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rollout-preview-heading > div { display: grid; gap: 5px; }
+.rollout-preview-heading b { color: #d4e2d8; font-size: 9px; }
+.rollout-identities { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rollout-identities > span { display: grid; gap: 3px; padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 5px; background: #0b1510; color: #c5d5ca; font-family: var(--mono); font-size: 8px; }
+.rollout-identities small { color: var(--faint); font-family: var(--sans); font-size: 7px; }
+.rollout-preview-note { display: block; margin-top: 10px; color: var(--faint); font-size: 8px; line-height: 1.5; }
 .patch-preview { margin: 0 17px 15px; padding: 12px; border: 1px solid #34463a; border-radius: 8px; background: #101a15; }
 .patch-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .patch-preview-heading > div { display: grid; gap: 5px; }
