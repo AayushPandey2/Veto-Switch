@@ -56,6 +56,7 @@ function App() {
   const [patchCandidate, setPatchCandidate] = useState(null);
   const [view, setView] = useState("incidents");
   const [rolloutStage, setRolloutStage] = useState(5);
+  const [rolloutPreview, setRolloutPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [incidentForm, setIncidentForm] = useState({
@@ -228,6 +229,16 @@ function App() {
     if (result?.status === "candidate_available") setPatchCandidate(result);
   };
 
+  const previewStage = async () => {
+    const result = await runAction(
+      `/incidents/${detail.id}/rollout`,
+      "POST",
+      { percentage: rolloutStage },
+      "Synthetic cohort preview ready. No flag or targeting changed.",
+    );
+    if (result?.status === "preview_only") setRolloutPreview(result);
+  };
+
   const stepState = (step) => {
     const status = detail?.status;
     if (!detail) return "upcoming";
@@ -324,9 +335,10 @@ function App() {
                           {selectedProposal?.status === "pending_approval" && <><button className="button button-danger" disabled={busy} onClick={() => approve("reject")}>Reject</button><button className="button button-primary" disabled={busy} onClick={() => approve("approve")}>Approve exact change <span>→</span></button></>}
                           {selectedProposal?.status === "approved" && <button className="button button-primary" disabled={busy} onClick={apply}>Apply approved change <span>→</span></button>}
                           {["applied", "verification_pending", "verification_failed", "verification_unavailable"].includes(detail.status) && <button className="button button-primary" disabled={busy} onClick={verify}>Run verification <span>→</span></button>}
-                          {detail.status === "verified" && <><button className="button button-quiet" disabled={busy} onClick={viewPatch}>View patch option</button><label className="rollout-select"><span>STAGE</span><select value={rolloutStage} onChange={(event) => setRolloutStage(Number(event.target.value))}><option value={5}>5%</option><option value={25}>25%</option><option value={50}>50%</option><option value={100}>100%</option></select></label><button className="button button-quiet" disabled={busy} onClick={() => runAction(`/incidents/${detail.id}/rollout`, "POST", { percentage: rolloutStage }, "Rollout status updated.")}>Preview stage</button></>}
+                          {detail.status === "verified" && <><button className="button button-quiet" disabled={busy} onClick={viewPatch}>View patch option</button><label className="rollout-select"><span>STAGE</span><select value={rolloutStage} onChange={(event) => setRolloutStage(Number(event.target.value))}><option value={5}>5%</option><option value={25}>25%</option><option value={50}>50%</option><option value={100}>100%</option></select></label><button className="button button-quiet" disabled={busy} onClick={previewStage}>Preview stage</button></>}
                         </div>
                       {detail.status === "verified" && <p className="rollout-note">Stage control is preview-only. It does not change Flagsmith targeting.</p>}
+                      {rolloutPreview?.incident_id === detail.id && rolloutPreview.requested_percentage === rolloutStage && <RolloutPreview preview={rolloutPreview} />}
                       {verification && <div className={`verification-card ${verification.status === "verified" ? "verification-good" : "verification-bad"}`}><div className="verification-head"><span>{verification.status === "verified" ? "✓" : "!"}</span><div><b>Post-change verification: {humanize(verification.status)}</b><small>{formatTime(verification.observed_at)}</small></div></div>{verification.checks && <div className="check-list">{Object.entries(verification.checks).map(([name, passed]) => <div key={name}><span className={passed ? "check-pass" : "check-fail"}>{passed ? "✓" : "×"}</span>{humanize(name)}</div>)}</div>}</div>}
                       {detail.operation_receipt && <div className="receipt-card"><div className="receipt-title"><div><span className="section-kicker">CHANGE RECEIPT</span><b>{humanize(detail.operation_receipt.adapter)}</b></div><StatusPill value={detail.operation_receipt.readback_verified ? "readback_verified" : "apply_failed"} /></div><div className="receipt-states">{Object.keys(detail.operation_receipt.after || {}).map((flag) => <div key={flag}><code>{flag}</code><span>{humanize(detail.operation_receipt.before?.[flag] || "unknown")} <i>→</i> <b>{humanize(detail.operation_receipt.after[flag])}</b></span></div>)}</div><small>Actor: {detail.decision?.actor || "unknown"} · {formatTime(detail.operation_receipt.executed_at)}</small></div>}
                       {patchCandidate?.incident_id === detail.id && <div className="patch-preview"><div className="patch-preview-heading"><div><span className="section-kicker">PATCH OPTION</span><b>{humanize(patchCandidate.safe_variant)} safe variant</b></div><StatusPill value="not_deployed" /></div><p>{patchCandidate.note}</p><div className="patch-file-pair"><code>{patchCandidate.before_file}</code><span>→</span><code>{patchCandidate.after_file}</code></div><div className="patch-test-status"><span>PATCH TEST</span><b>Not run</b></div><pre aria-label="Code difference">{patchCandidate.diff}</pre></div>}
@@ -377,6 +389,16 @@ function ImpactComparison({ incident, routes, preChangeCheck }) {
       </div>
       <div className="impact-footer"><span>Unaffected routes</span><b>{unrelatedRoutes.length ? unrelatedRoutes.map((item) => item.path).join(", ") : "None identified"}</b><small>Local code evidence only. No production traffic or customer cohort counts are connected.</small></div>
     </section>
+  );
+}
+
+function RolloutPreview({ preview }) {
+  return (
+    <div className="rollout-preview">
+      <div className="rollout-preview-heading"><div><span className="section-kicker">LOCAL COHORT PREVIEW</span><b>{preview.selected_count} of {preview.eligible_count} synthetic users · {preview.requested_percentage}% stage</b></div><StatusPill value="preview_only" /></div>
+      <div className="rollout-identities">{preview.selected_identities.map((user) => <span key={user.username}>{user.username}<small>{user.department}</small></span>)}</div>
+      <small className="rollout-preview-note">This list is deterministic for this incident. No Flagsmith targeting, flags, or real traffic were changed.</small>
+    </div>
   );
 }
 
