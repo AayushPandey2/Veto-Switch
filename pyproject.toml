@@ -30,6 +30,7 @@ platform = [
     "fastapi>=0.115,<1.0",
     "uvicorn>=0.30,<1.0",
     "flask>=3.0,<4.0",
+    "flagsmith>=3.9,<4.0",
 ]
 ai = [
     "tenacity>=9.0,<10.0",
@@ -43,19 +44,24 @@ exclude = ["platform*", "security*", "tests*", "docs*", "scripts*", "config*", "
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests", "agent_core/tests", "remediation/tests"]
-pythonpath = ["."]
+pythonpath = [".", "platform"]
 asyncio_mode = "auto"
 addopts = "-ra --strict-markers"
 markers = [
     "unit: Fast offline unit tests for shared foundation and validation.",
     "contract: Service protocol, boundary, and fixture contract tests.",
     "integration: Cross-component orchestration and recovery workflow tests.",
+    "docker: Tests requiring Docker daemon or container build/execution.",
+    "network: Tests requiring network or external service connectivity.",
+    "live: Live external integration tests.",
+    "end_to_end: Full cross-lane end-to-end verification tests.",
 ]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 src = ["shared", "agent_core", "remediation", "scripts", "tests"]
+exclude = ["platform", "security"]
 
 [tool.ruff.lint]
 select = [

@@ -20,6 +20,7 @@ from shared.enums import (
 )
 from shared.exceptions import ContractValidationError
 from shared.schemas import Finding, VerificationResult
+from shared.serialization import canonical_json, sha256_text
 
 _CATEGORY_MAP: dict[str, VulnerabilityCategory] = {
     "sqli": VulnerabilityCategory.SQL_INJECTION,
@@ -200,8 +201,26 @@ def normalize_security_verification_result(
             or "Security verification encountered an infrastructure error."
         )
 
+    raw_ver_id = payload.get("verification_id")
+    if raw_ver_id:
+        ver_id = str(raw_ver_id)
+    else:
+        ver_id = "ver_" + sha256_text(
+            canonical_json(
+                {
+                    "incident_id": resolved_incident_id,
+                    "test_id": payload.get("test_id"),
+                    "target_id": payload.get("target_id"),
+                    "phase": payload.get("phase"),
+                    "outcome": outcome,
+                    "evidence_id": payload.get("evidence_id"),
+                    "revision": payload.get("tested_revision") or payload.get("revision"),
+                }
+            )
+        )[:16]
+
     return VerificationResult(
-        verification_id=str(payload["verification_id"]),
+        verification_id=ver_id,
         incident_id=str(resolved_incident_id),
         test_id=str(payload["test_id"]),
         phase=normalize_security_phase(str(payload["phase"])),

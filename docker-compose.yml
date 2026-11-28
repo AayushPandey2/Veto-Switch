@@ -1,0 +1,84 @@
+services:
+  demo-app:
+    build:
+      context: .
+      dockerfile: platform/Dockerfile
+    command: ["python", "-m", "demo_app"]
+    environment:
+      KILLSWITCH_CONTAINERIZED: "true"
+      KILLSWITCH_DEMO_BIND_HOST: "0.0.0.0"
+      KILLSWITCH_DEMO_DATABASE: /app/artifacts/demo.sqlite3
+      KILLSWITCH_DEMO_ENV: local
+      KILLSWITCH_DEMO_MODE: ${KILLSWITCH_DEMO_MODE:-false}
+      KILLSWITCH_ALLOW_VULNERABLE_ROUTES: ${KILLSWITCH_ALLOW_VULNERABLE_ROUTES:-false}
+      KILLSWITCH_FLAG_ADAPTER: ${KILLSWITCH_FLAG_ADAPTER:-local}
+      KILLSWITCH_FLAG_SEARCH_V1: ${KILLSWITCH_FLAG_SEARCH_V1:-false}
+      KILLSWITCH_FLAG_SEARCH_V2: ${KILLSWITCH_FLAG_SEARCH_V2:-false}
+      KILLSWITCH_FLAG_FILES_V1: ${KILLSWITCH_FLAG_FILES_V1:-false}
+      KILLSWITCH_FLAG_FILES_V2: ${KILLSWITCH_FLAG_FILES_V2:-false}
+      KILLSWITCH_PLATFORM_FLAGSMITH_ENVIRONMENT_KEY: ${KILLSWITCH_PLATFORM_FLAGSMITH_ENVIRONMENT_KEY:-}
+      KILLSWITCH_PLATFORM_FLAGSMITH_SERVER_ENVIRONMENT_KEY: ${KILLSWITCH_PLATFORM_FLAGSMITH_SERVER_ENVIRONMENT_KEY:-}
+      KILLSWITCH_PLATFORM_FLAGSMITH_API_URL: ${KILLSWITCH_PLATFORM_FLAGSMITH_API_URL:-https://api.flagsmith.com/api/v1}
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - demo-data:/app/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: platform/Dockerfile
+    command: ["python", "-m", "backend"]
+    depends_on:
+      demo-app:
+        condition: service_healthy
+    environment:
+      KILLSWITCH_CONTAINERIZED: "true"
+      KILLSWITCH_BACKEND_BIND_HOST: "0.0.0.0"
+      KILLSWITCH_DEMO_APP_URL: http://demo-app:5000
+      KILLSWITCH_DEMO_DATABASE: /app/artifacts/demo.sqlite3
+      KILLSWITCH_DEMO_ENV: local
+      KILLSWITCH_DEMO_MODE: ${KILLSWITCH_DEMO_MODE:-false}
+      KILLSWITCH_ALLOW_VULNERABLE_ROUTES: ${KILLSWITCH_ALLOW_VULNERABLE_ROUTES:-false}
+      KILLSWITCH_FLAG_ADAPTER: ${KILLSWITCH_FLAG_ADAPTER:-local}
+      KILLSWITCH_FLAG_SEARCH_V1: ${KILLSWITCH_FLAG_SEARCH_V1:-false}
+      KILLSWITCH_FLAG_SEARCH_V2: ${KILLSWITCH_FLAG_SEARCH_V2:-false}
+      KILLSWITCH_FLAG_FILES_V1: ${KILLSWITCH_FLAG_FILES_V1:-false}
+      KILLSWITCH_FLAG_FILES_V2: ${KILLSWITCH_FLAG_FILES_V2:-false}
+      KILLSWITCH_OPERATOR_PASSPHRASE: ${KILLSWITCH_OPERATOR_PASSPHRASE:-local-demo-passphrase}
+      KILLSWITCH_PLATFORM_FLAGSMITH_ENVIRONMENT_KEY: ${KILLSWITCH_PLATFORM_FLAGSMITH_ENVIRONMENT_KEY:-}
+      KILLSWITCH_PLATFORM_FLAGSMITH_SERVER_ENVIRONMENT_KEY: ${KILLSWITCH_PLATFORM_FLAGSMITH_SERVER_ENVIRONMENT_KEY:-}
+      KILLSWITCH_PLATFORM_FLAGSMITH_MANAGEMENT_TOKEN: ${KILLSWITCH_PLATFORM_FLAGSMITH_MANAGEMENT_TOKEN:-}
+      KILLSWITCH_PLATFORM_FLAGSMITH_API_URL: ${KILLSWITCH_PLATFORM_FLAGSMITH_API_URL:-https://api.flagsmith.com/api/v1}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - demo-data:/app/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build:
+      context: .
+      dockerfile: platform/frontend/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:80/"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  demo-data:

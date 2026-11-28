@@ -1,0 +1,24 @@
+{
+  "_ksx_fixture": {
+    "note": "Saved reference copy of a public advisory in OSV format, trimmed to the fields Killswitch X uses. Source: OSV.dev / GitHub Advisory Database. Re-check against the live record before the demo with `python -m security cve --refresh`.",
+    "source_url": "https://osv.dev/vulnerability/GHSA-2g68-c3qc-8985",
+    "demo_only": true,
+    "exploit_preconditions": "Requires the Werkzeug interactive debugger to be enabled and reachable. The demo app runs with debug=False, so relevance is a dependency-hygiene issue, not a demonstrated exploit."
+  },
+  "id": "GHSA-2g68-c3qc-8985",
+  "aliases": ["CVE-2024-34069", "PYSEC-2026-2043"],
+  "summary": "Werkzeug debugger vulnerable to remote execution when interacting with attacker controlled domain",
+  "published": "2024-05-06T14:21:27Z",
+  "modified": "2026-11-18T00:45:13.752437127Z",
+  "database_specific": {"severity": "HIGH"},
+  "affected": [
+    {
+      "package": {"ecosystem": "PyPI", "name": "werkzeug"},
+      "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.3"}]}]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://github.com/pallets/werkzeug/security/advisories/GHSA-2g68-c3qc-8985"},
+    {"type": "ADVISORY", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-34069"}
+  ]
+}

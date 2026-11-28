@@ -1,0 +1,51 @@
+{
+  "_comment": "DEMO / SYNTHETIC DATA. Shared seed spec for the demo app (platform lane) and the security tests. No real people, records or credentials.",
+  "version": "1.0.0",
+  "default_nonce": "0000demo",
+  "users": [
+    "demo-user-01", "demo-user-02", "demo-user-03", "demo-user-04", "demo-user-05",
+    "demo-user-06", "demo-user-07", "demo-user-08", "demo-user-09", "demo-user-10",
+    "demo-user-11", "demo-user-12", "demo-user-13", "demo-user-14", "demo-user-15",
+    "demo-user-16", "demo-user-17", "demo-user-18", "demo-user-19", "demo-user-20"
+  ],
+  "public_documents": [
+    {"title": "Widget catalogue 2026", "owner": "demo-user-01"},
+    {"title": "Widget assembly guide", "owner": "demo-user-02"},
+    {"title": "Blue widget spec sheet", "owner": "demo-user-03"},
+    {"title": "Gadget pricing overview", "owner": "demo-user-04"},
+    {"title": "Gizmo warranty terms", "owner": "demo-user-05"},
+    {"title": "O'Brien widget review", "owner": "demo-user-06"},
+    {"title": "Office plant care notes", "owner": "demo-user-07"},
+    {"title": "Team offsite agenda", "owner": "demo-user-08"}
+  ],
+  "private_documents": [
+    {"title": "KSX-CANARY-PRIVATE-{nonce}-A", "owner": "demo-admin"},
+    {"title": "KSX-CANARY-PRIVATE-{nonce}-B", "owner": "demo-admin"}
+  ],
+  "canary_prefix": "KSX-CANARY-PRIVATE-",
+  "functional_search": {
+    "query": "widget",
+    "expected_titles": [
+      "Blue widget spec sheet",
+      "O'Brien widget review",
+      "Widget assembly guide",
+      "Widget catalogue 2026"
+    ]
+  },
+  "public_files": {
+    "readme.txt": "DEMO / SYNTHETIC DATA. Welcome to the demo document store.",
+    "handbook.txt": "DEMO / SYNTHETIC DATA. Employee handbook placeholder text."
+  },
+  "functional_file": {"name": "readme.txt", "expected_substring": "Welcome to the demo document store"},
+  "sentinel": {
+    "_comment": "Harmless file placed one level ABOVE the document root. Reading it proves the root boundary was crossed.",
+    "filename": "ksx_sentinel.txt",
+    "content_template": "KSX-SENTINEL-OUTSIDE-ROOT-{nonce}",
+    "prefix": "KSX-SENTINEL-OUTSIDE-ROOT-"
+  },
+  "catalog": [
+    {"sku": "W-100", "name": "Blue widget"},
+    {"sku": "G-200", "name": "Gadget"},
+    {"sku": "Z-300", "name": "Gizmo"}
+  ]
+}

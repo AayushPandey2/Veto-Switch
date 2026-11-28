@@ -118,7 +118,7 @@ def build_local_call_index(
     )
     for entry in snapshot.files:
         try:
-            tree = ast.parse(entry.content, filename=entry.relative_path)
+            tree = ast.parse(entry.content.lstrip("\ufeff"), filename=entry.relative_path)
         except SyntaxError:
             continue
         for node in tree.body:

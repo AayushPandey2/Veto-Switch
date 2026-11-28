@@ -37,7 +37,7 @@ def discover_routes_in_snapshot(
 
     for entry in snapshot.files:
         try:
-            tree = ast.parse(entry.content, filename=entry.relative_path)
+            tree = ast.parse(entry.content.lstrip("\ufeff"), filename=entry.relative_path)
         except SyntaxError as exc:
             diagnostics.append(f"route_discovery_syntax_error:{entry.relative_path}:{exc.lineno}")
             continue

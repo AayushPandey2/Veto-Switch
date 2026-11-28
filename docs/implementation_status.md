@@ -1,9 +1,9 @@
 # Killswitch X — Implementation Status
 
-**Current Phase:** Prompt 11 / 12 — Incident Evidence Intelligence (`remediation/evidence.py`, `remediation/reporting/`). Note: Phase 06 (`flag_auditor.py`) and Phase 12 have no prompt specifications in this workspace and remain unimplemented.
+**Current Phase:** Prompt 12 / 12 — Cross-Branch Integration & Complete 12-Phase System (`Feature` + `security/` + `platform/`).
 
 > [!NOTE]
-> Specification files `00_MASTER_ROADMAP.md`, `01_AI_ML_ENGINEER_1.md`, and `02_AI_ML_ENGINEER_2.md` were unavailable in the workspace during Phases 01–07 and could not be inspected.
+> All 12 phases are implemented on `Feature`. Live Flagsmith mutations and Docker container sandbox execution remain gated behind external credentials/daemon availability.
 
 ## Phase 01–05 & 07 Inventory
 
@@ -21,6 +21,8 @@
 - **Phase 05 Blast Radius Intelligence & Containment Strategist (`agent_core/blast_radius.py`, `agent_core/graph_intelligence/`, `agent_core/containment_strategist.py`, `agent_core/containment/`):**
   - Directed multigraph index (`O(V + E)` bounded BFS), integrity validation, relationship-specific exposure vs disruption analysis, non-mutating counterfactual simulation, and dashboard graph serializer (`docs/blast_radius_intelligence.md`).
   - `DeterministicContainmentStrategist` (`ContainmentStrategistAgent`), versioned `config/containment_policy.json`, hard feasibility gates, replacement safety checks, deterministic weighted scoring & sensitivity analysis, hardened `v2` `ContainmentProposal` hashing, `IncidentOrchestrator.execute_containment_analysis` stopping at `AWAITING_APPROVAL`, offline demos (`agent_core.demos.blast_radius_demos`), and 7-case evaluator (`agent_core.evaluations.blast_radius_evaluator`).
+- **Phase 06 Feature Flag Coverage Auditor (`agent_core/flag_auditor.py`, `agent_core/coverage/`):**
+  - Bounded read-only AST static route discovery, 3-valued `FeatureState` boolean guard & control-flow dominance analysis, alternate entry-point bypass detection, registry/graph/manifest reconciliation, runtime corroboration, review-only recommendations, `serialize_coverage_dashboard`, `serialize_flags_coverage_endpoint`, `IncidentOrchestrator.execute_coverage_audit`, containment bypass feasibility gating, Demos A–N (`agent_core.demos.coverage_demos`), and 12-case evaluator (`agent_core.evaluations.coverage_evaluator`, `docs/flag_coverage.md`).
 - **Phase 07 AI Patch Engineer (`remediation/patch_agent.py`, `remediation/patching/`, `remediation/prompts/`):**
   - Target descriptors distinguishing `stand_in` vs `platform_demo_app`, bounded `SourceSnapshot` & AST localization, `LLMGateway` integration with bounded repair and revision-compatible `REFERENCE_FIXTURE` fallback, strict unified diff parsing & in-memory applicability, AST static safety & minimality metrics, `ArtifactType.PATCH_DIFF` persistence, `ReviewerChecklist` + PR-ready Markdown summary, `IncidentOrchestrator.execute_patch_generation`, offline demos (`remediation.demos`), and 5-case evaluator (`remediation.evaluations.patch_evaluator`, `docs/patch_engineer.md`).
 - **Phase 08 Isolated Patch Verification (`remediation/patch_tests.py`, `remediation/verification/`, `remediation/adapters/`):**
@@ -32,11 +34,7 @@
 - **Phase 11 Incident Evidence Intelligence (`remediation/evidence.py`, `remediation/reporting/`):**
   - Deterministic `IncidentEvidenceReporter` and compatible `generate_report`, `EvidenceContentReader.read_artifact_content`, SHA-256 artifact integrity classification, event-history & cross-record consistency validation, claim-to-evidence linking, lifecycle-aware `EvidenceCompleteness`, recursive secret redaction preserving original artifact bytes, deterministic Markdown/JSON export & `verify_report_bundle`, `IncidentOrchestrator.execute_evidence_reporting`, Phase 12 traceability matrix, offline demos (`remediation.evidence_demos`), and 12-case evaluator (`remediation.evaluations.evidence_evaluator`, `docs/evidence_reporting.md`).
 
-### Intentionally Deferred to Phase 06 & Phases 08–12
-
-| Subsystem | Deferred Modules | Planned Owner |
-| :--- | :--- | :--- |
-| Feature Flag Coverage Auditor | `flag_auditor.py` | AI/ML Engineer 1 |
-| Remediation & Recovery Intelligence | `remediation/patch_agent.py`, `patch_tests.py`, `rollout_agent.py`, `rollback.py`, `evidence.py`, `policies.py`, `prompts/` | AI/ML Engineer 2 |
-| Security Verification & Isolated Runner | `security/` scanner adapters, controlled reproduction, regression tests, isolated patch runner | Cybersecurity Engineer |
-| Platform Backend, UI & Flagsmith Executor | `platform/` FastAPI backend, durable transactional DB repos, Flagsmith integration, approval workflow, Flask demo app, React UI | Full-stack & Cybersecurity Engineer |
+### Phase 12 Cross-Branch Integration (`docs/cross_branch_integration.md`)
+- **Security Lane (`security/`):** Integrated `origin/feat/security` (`d81243d`) with decoupled `SecurityFinding`, `SecurityVerificationResult`, and `SecurityIncidentEvent` wire DTOs normalized into canonical `shared.schemas` via `agent_core/adapters/security_contract.py`.
+- **Platform Lane (`platform/`):** Integrated `origin/feat/platform` (`9e973bf`) (`demo_app` Flask app, `backend` FastAPI control plane + SQLite + Flagsmith client, `frontend` React/Vite UI, `docker-compose.yml`), wiring `GET /flags/coverage` to Phase 06 static analysis without shadowing stdlib `platform`.
+- **Cross-Lane Contract Tests:** `tests/integration/test_cross_branch_integration.py` verifies DTO normalization, deterministic verification IDs, live Flask + FastAPI `/flags/coverage` + Phase 06 audit integration, and stdlib `platform` safety.

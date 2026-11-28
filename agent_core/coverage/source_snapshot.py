@@ -65,7 +65,7 @@ def build_in_memory_snapshot(
                 f"Snapshot file count exceeds max_files ({active_limits.max_files})."
             )
         try:
-            tree = ast.parse(content, filename=rel_path)
+            tree = ast.parse(content.lstrip("\ufeff"), filename=rel_path)
             node_count = sum(1 for _ in ast.walk(tree))
             total_nodes += node_count
             if total_nodes > active_limits.max_ast_nodes:

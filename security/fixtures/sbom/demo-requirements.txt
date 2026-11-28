@@ -1,0 +1,6 @@
+# DEMO SBOM FIXTURE. Deliberately pins an old Werkzeug so advisory matching has
+# something to show. This is NOT what the stand-in container installs.
+flask==2.3.2
+werkzeug==2.3.7
+jinja2==3.1.4
+itsdangerous
