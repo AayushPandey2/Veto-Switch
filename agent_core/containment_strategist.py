@@ -17,6 +17,7 @@ from shared.identifiers import generate_idempotency_token, generate_proposal_id
 from shared.schemas import (
     ContainmentPolicyConfig,
     ContainmentProposal,
+    CoverageFinding,
     DependencyGraph,
     DeploymentEvidence,
     FeatureState,
@@ -62,6 +63,7 @@ class DeterministicContainmentStrategist(ContainmentStrategistAgent):
         registry: RouteFlagRegistry | None = None,
         deployment_evidence: Sequence[DeploymentEvidence] = (),
         verification_results: Sequence[VerificationResult] = (),
+        coverage_findings: Sequence[CoverageFinding] = (),
         application_revision: str | None = None,
         environment: str | None = None,
     ) -> ContainmentAnalysisResult:
@@ -92,6 +94,7 @@ class DeterministicContainmentStrategist(ContainmentStrategistAgent):
             registry=active_reg,
             deployment_evidence=deployment_evidence,
             verification_results=verification_results,
+            coverage_findings=coverage_findings,
             evaluation_timestamp=now,
         )
         sensitivity = run_sensitivity_analysis(

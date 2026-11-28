@@ -20,6 +20,7 @@ from shared.schemas import (
     ApprovalDecision,
     ArtifactReference,
     ContainmentProposal,
+    CoverageFinding,
     DependencyGraph,
     DeploymentEvidence,
     EvidenceReport,
@@ -332,6 +333,7 @@ class TransitionContext:
     rollout_decision: RolloutDecision | None = None
     rollback_proposal: RollbackProposal | None = None
     evidence_artifacts: list[ArtifactReference] = field(default_factory=list)
+    coverage_findings: list[CoverageFinding] = field(default_factory=list)
     existing_evidence_ids: set[str] | None = None
     consumed_approval_ids: set[str] = field(default_factory=set)
     stage_approval_decision: ApprovalDecision | None = None

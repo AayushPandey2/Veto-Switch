@@ -7,6 +7,7 @@ without ever executing privileged Flagsmith mutations or LLM transitions directl
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from shared.contracts import EvidenceRepository
@@ -40,6 +41,7 @@ from shared.schemas import (
     ApprovalDecision,
     ArtifactReference,
     ContainmentProposal,
+    CoverageFinding,
     DependencyGraph,
     FeatureState,
     Finding,
@@ -72,6 +74,7 @@ from agent_core.context import (
     SystemClock,
     TransitionContext,
 )
+from agent_core.coverage.models import CoverageAuditContext, CoverageAuditResult, SourceSnapshot
 from agent_core.event_dispatcher import EventDispatcher
 from agent_core.events import (
     build_incident_event,
@@ -84,6 +87,7 @@ from agent_core.evidence_validator import (
     validate_producer_for_evidence,
     validate_provenance_for_mode,
 )
+from agent_core.flag_auditor import DeterministicFlagCoverageAuditor, FlagCoverageAuditor
 from agent_core.flag_mapper import DeterministicFlagMapper
 from agent_core.idempotency import check_event_idempotency
 from agent_core.incident import IncidentAggregate
@@ -120,6 +124,7 @@ class IncidentOrchestrator:
         patch_engineer: PatchEngineerAgent | None = None,
         release_manager: ReleaseManagerAgent | None = None,
         evidence_reporter: EvidenceReporterAgent | None = None,
+        flag_auditor: FlagCoverageAuditor | None = None,
     ) -> None:
         self._repo: OrchestrationRepository = repository or InMemoryOrchestrationRepository()
         if evidence_repository is not None:
@@ -145,6 +150,7 @@ class IncidentOrchestrator:
         self._patch_engineer = patch_engineer
         self._release_manager = release_manager
         self._evidence_reporter = evidence_reporter
+        self._flag_auditor = flag_auditor
         self._logger = get_logger("agent_core.orchestrator")
 
     @property
@@ -974,6 +980,7 @@ class IncidentOrchestrator:
         dependency_graph: DependencyGraph,
         observed_features: list[FeatureState],
         producer_context: ProducerContext,
+        coverage_findings: Sequence[CoverageFinding] = (),
     ) -> tuple[ContainmentAnalysisResult | None, EventProcessingResult]:
         """Run blast-radius & containment analysis and transition to AWAITING_APPROVAL.
 
@@ -1007,6 +1014,7 @@ class IncidentOrchestrator:
                 dependency_graph,
                 observed_features,
                 registry=self._route_registry,
+                coverage_findings=coverage_findings,
                 application_revision=incident.source_revision,
                 environment=incident.environment,
             )
@@ -1877,6 +1885,84 @@ class IncidentOrchestrator:
             transition_context=t_ctx,
         )
         return report, md, js, res
+
+    async def execute_coverage_audit(
+        self,
+        *,
+        snapshot: SourceSnapshot,
+        dependency_graph: DependencyGraph | None = None,
+        manifest_routes: Sequence[str] = (),
+        observed_features: Sequence[FeatureState] = (),
+        verification_results: Sequence[VerificationResult] = (),
+        incident_id: str | None = None,
+        finding_id: str | None = None,
+        proposed_flag_action: str | None = None,
+    ) -> CoverageAuditResult:
+        """Run a read-only Phase 06 coverage audit and store a redacted artifact if enabled.
+
+        Does NOT mutate feature flags, operational state, or incident lifecycle state.
+        """
+        auditor = self._flag_auditor or DeterministicFlagCoverageAuditor(clock=self._clock)
+        ctx = CoverageAuditContext(
+            application_id=snapshot.application_id,
+            environment=snapshot.environment,
+            snapshot=snapshot,
+            registry=self._route_registry,
+            dependency_graph=dependency_graph,
+            manifest_routes=list(manifest_routes),
+            observed_features=list(observed_features),
+            verification_results=list(verification_results),
+            incident_id=incident_id,
+            finding_id=finding_id,
+            proposed_flag_action=proposed_flag_action,
+            is_fixture=self._fixture_mode,
+        )
+        result = await auditor.audit(ctx)
+
+        if self._evidence_repo is not None and incident_id is not None:
+            serialized = canonical_json(
+                {
+                    "audit_id": result.audit_id,
+                    "application_id": result.application_id,
+                    "environment": result.environment,
+                    "source_revision": result.source_revision,
+                    "source_tree_fingerprint": result.source_tree_fingerprint,
+                    "summary": result.summary.model_dump(mode="json"),
+                    "findings": [f.model_dump(mode="json") for f in result.findings],
+                    "limitations": result.limitations,
+                }
+            )
+            art_ref = ArtifactReference(
+                artifact_id=generate_artifact_id(),
+                incident_id=incident_id,
+                artifact_type=ArtifactType.COVERAGE_AUDIT_REPORT,
+                content_hash=sha256_text(serialized),
+                storage_ref=f"coverage/{incident_id}/{result.audit_id}.json",
+                created_at=self._clock.now(),
+                producer="agent_core_flag_auditor",
+                provenance=(
+                    EvidenceProvenance.REFERENCE_FIXTURE
+                    if self._fixture_mode
+                    else EvidenceProvenance.DETERMINISTIC_REASONING
+                ),
+                content_type="application/json",
+                size_bytes=len(serialized.encode("utf-8")),
+                source_revision=snapshot.source_revision,
+                redaction_status=RedactionStatus.REDACTED,
+            )
+            await self._evidence_repo.store_artifact(art_ref, serialized.encode("utf-8"))
+            updated_findings = [
+                f.model_copy(update={"evidence_ids": [*f.evidence_ids, art_ref.artifact_id]})
+                for f in result.findings
+            ]
+            result = result.model_copy(
+                update={
+                    "findings": updated_findings,
+                    "artifact_reference": art_ref,
+                }
+            )
+
+        return result
 
 
 async def on_incident_event(

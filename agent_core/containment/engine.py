@@ -8,6 +8,7 @@ from datetime import datetime
 from shared.enums import (
     ContainmentReasonCode,
     ContainmentStrategyType,
+    CoverageStatus,
     DeploymentStatus,
     FeatureObservationStatus,
     FindingStatus,
@@ -20,6 +21,7 @@ from shared.schemas import (
     ContainmentOption,
     ContainmentPolicyConfig,
     ContainmentPolicyWeights,
+    CoverageFinding,
     DeploymentEvidence,
     FeatureState,
     Finding,
@@ -184,6 +186,7 @@ def evaluate_containment_candidates(
     registry: RouteFlagRegistry | None = None,
     deployment_evidence: Sequence[DeploymentEvidence] = (),
     verification_results: Sequence[VerificationResult] = (),
+    coverage_findings: Sequence[CoverageFinding] = (),
     evaluation_timestamp: datetime,
     freshness_max_age_seconds: int = 300,
 ) -> tuple[list[EvaluatedStrategy], list[ContainmentReasonCode], list[str]]:
@@ -268,6 +271,23 @@ def evaluate_containment_candidates(
                 "instead of redundant toggle."
             )
             s_codes.append(ContainmentReasonCode.FEATURE_ALREADY_DISABLED)
+        for cov in coverage_findings:
+            if (
+                selected_flag in cov.associated_flags or cov.route == finding.affected_route
+            ) and cov.coverage_status in {
+                CoverageStatus.UNPROTECTED,
+                CoverageStatus.PARTIALLY_PROTECTED,
+            }:
+                bypass_str = ", ".join(cov.alternate_execution_paths)
+                infeas_reasons.append(
+                    f"Coverage audit reports {cov.coverage_status.value} for {cov.route}"
+                    + (f" with alternate bypass path(s): {bypass_str}" if bypass_str else "")
+                )
+                s_codes.append(ContainmentReasonCode.RESIDUAL_EXPOSURE_UNRESOLVED)
+                global_limitations.append(
+                    f"Known coverage gap on {cov.route} prevents complete containment "
+                    f"via {selected_flag!r} alone."
+                )
         if not cf_disable.fallback_behavior:
             infeas_reasons.append("No declared safe fallback behavior for target route.")
             s_codes.append(ContainmentReasonCode.MISSING_FALLBACK_EVIDENCE)
