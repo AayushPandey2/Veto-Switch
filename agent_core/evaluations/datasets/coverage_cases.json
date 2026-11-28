@@ -1,0 +1,127 @@
+{
+  "dataset_version": "1.0.0",
+  "description": "Labeled synthetic offline evaluation dataset for Phase 06 Feature Flag Coverage Auditing.",
+  "cases": [
+    {
+      "case_id": "cov_01_guarded_batch_read",
+      "description": "Guarded /search route using batch get_states and safe fallback",
+      "source": "@app.get('/search')\ndef search_route():\n    states = provider.get_states(('search_v1', 'search_v2'), identity=identity)\n    if states['search_v2'] is FeatureState.ENABLED:\n        return parameterized_search_documents()\n    if states['search_v1'] is FeatureState.ENABLED:\n        return vulnerable_search_documents_for_demo()\n    return safe_search_fallback()\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "protected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_02_early_return_guard",
+      "description": "Early-return blocking /demo/search-v1 when search_v1 not enabled or search_v2 enabled",
+      "source": "@app.get('/demo/search-v1')\ndef demo_search():\n    states = provider.get_states(('search_v1', 'search_v2'), identity=identity)\n    if states['search_v1'] is not FeatureState.ENABLED or states['search_v2'] is FeatureState.ENABLED:\n        return safe_search_fallback()\n    return vulnerable_search_documents_for_demo()\n",
+      "expected_route": "/demo/search-v1",
+      "expected_method": "GET",
+      "expected_status": "protected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_03_alternate_bypass",
+      "description": "Guarded /search alongside unguarded /demo/direct-search calling same sink",
+      "source": "@app.get('/search')\ndef search_route():\n    if provider.is_enabled('search_v1'):\n        return vulnerable_search_documents_for_demo()\n    return safe_search_fallback()\n\n@app.get('/demo/direct-search')\ndef direct_bypass():\n    return vulnerable_search_documents_for_demo()\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "partially_protected",
+      "expected_applicability": "applicable",
+      "expect_bypass": true
+    },
+    {
+      "case_id": "cov_04_legacy_export_unprotected",
+      "description": "Intentionally unprotected /legacy-export fixture",
+      "source": "@app.get('/legacy-export')\ndef legacy_export():\n    return legacy_export_records()\n",
+      "expected_route": "/legacy-export",
+      "expected_method": "GET",
+      "expected_status": "unprotected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_05_logging_only",
+      "description": "Flag checked only for logging before unprotected sink",
+      "source": "@app.get('/search')\ndef search_log():\n    if provider.is_enabled('search_v1'):\n        logger.info('flag on')\n    return vulnerable_search_documents_for_demo()\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "unprotected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_06_guard_after_sink",
+      "description": "Guard checked only after sensitive sink executes",
+      "source": "@app.get('/search')\ndef search_late():\n    res = vulnerable_search_documents_for_demo()\n    if provider.is_enabled('search_v1'):\n        logger.info('late')\n    return res\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "unprotected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_07_wrong_flag",
+      "description": "Guard checks unrelated flag instead of search_v1",
+      "source": "@app.get('/search')\ndef search_wrong():\n    if provider.is_enabled('unrelated_flag'):\n        return vulnerable_search_documents_for_demo()\n    return safe_search_fallback()\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "unprotected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_08_or_bypass",
+      "description": "OR expression allows sink when search_v1 is disabled",
+      "source": "@app.get('/search')\ndef search_or():\n    if provider.is_enabled('search_v1') or provider.is_enabled('other_flag'):\n        return vulnerable_search_documents_for_demo()\n    return safe_search_fallback()\n",
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "unprotected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_09_dynamic_route",
+      "description": "Dynamic route expression produces unknown",
+      "source": "@app.get(get_route())\ndef dyn():\n    return getattr(svc, 'run')()\n",
+      "expected_route": "<dynamic>",
+      "expected_method": "GET",
+      "expected_status": "unknown",
+      "expected_applicability": "unknown",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_10_exempt_health",
+      "description": "Health endpoint is intentionally exempt",
+      "source": "@app.get('/health')\ndef health():\n    return health_response()\n",
+      "expected_route": "/health",
+      "expected_method": "GET",
+      "expected_status": "unknown",
+      "expected_applicability": "exempt",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_11_guarded_files_v2_v1",
+      "description": "Guarded /files with files_v2 precedence then files_v1",
+      "source": "@app.get('/files')\ndef files_route():\n    states = provider.get_states(('files_v1', 'files_v2'), identity=identity)\n    if states['files_v2'] is FeatureState.ENABLED:\n        return safe_read_public_file()\n    if states['files_v1'] is FeatureState.ENABLED:\n        return vulnerable_read_demo_file_for_demo()\n    return safe_files_fallback()\n",
+      "expected_route": "/files",
+      "expected_method": "GET",
+      "expected_status": "protected",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    },
+    {
+      "case_id": "cov_12_incomplete_snapshot",
+      "description": "Incomplete snapshot downgrades static protected claim to unknown",
+      "source": "@app.get('/search')\ndef search_route():\n    if provider.is_enabled('search_v1'):\n        return vulnerable_search_documents_for_demo()\n    return safe_search_fallback()\n",
+      "is_complete": false,
+      "expected_route": "/search",
+      "expected_method": "GET",
+      "expected_status": "unknown",
+      "expected_applicability": "applicable",
+      "expect_bypass": false
+    }
+  ]
+}

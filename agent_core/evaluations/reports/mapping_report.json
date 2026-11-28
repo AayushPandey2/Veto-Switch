@@ -1,0 +1,133 @@
+{
+  "dataset_version": "1.0.0",
+  "total_cases": 12,
+  "passed_cases": 12,
+  "failed_cases": 0,
+  "accuracy": 1.0,
+  "unsafe_operational_eligibility_count": 0,
+  "deterministic_repeatability": "12/12",
+  "registry_order_invariance": "12/12",
+  "incorrect_feature_rejected": true,
+  "results": [
+    {
+      "case_id": "map_01_search_sqli_verified",
+      "category": "exact_mapping",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "search_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_02_files_traversal",
+      "category": "exact_mapping",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "files_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_03_legacy_search_alias",
+      "category": "alias_resolution",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "search_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_04_search_trailing_slash_variant",
+      "category": "alias_resolution",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "search_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_05_component_alias_files_v1",
+      "category": "component_resolution",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "files_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_06_component_only_unambiguous",
+      "category": "component_resolution",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "files_v1",
+      "actual_eligibility": "eligible",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_07_ambiguous_multi_flag_no_impl",
+      "category": "ambiguity_recognition",
+      "passed": true,
+      "actual_status": "ambiguous",
+      "actual_flag": null,
+      "actual_eligibility": "blocked",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_08_unknown_route",
+      "category": "unknown_route_rejection",
+      "passed": true,
+      "actual_status": "unmapped",
+      "actual_flag": null,
+      "actual_eligibility": "blocked",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_09_environment_mismatch",
+      "category": "environment_mismatch",
+      "passed": true,
+      "actual_status": "unmapped",
+      "actual_flag": null,
+      "actual_eligibility": "blocked",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_10_stale_feature_state",
+      "category": "stale_state_detection",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "files_v1",
+      "actual_eligibility": "hold",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_11_revision_mismatch",
+      "category": "revision_mismatch",
+      "passed": true,
+      "actual_status": "unmapped",
+      "actual_flag": null,
+      "actual_eligibility": "blocked",
+      "repeatable": true,
+      "order_invariant": true
+    },
+    {
+      "case_id": "map_12_fixture_evidence_in_live_mode",
+      "category": "provenance_separation",
+      "passed": true,
+      "actual_status": "matched",
+      "actual_flag": "files_v1",
+      "actual_eligibility": "blocked",
+      "repeatable": true,
+      "order_invariant": true
+    }
+  ]
+}

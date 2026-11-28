@@ -1,0 +1,110 @@
+{
+  "phase": "Phase 06 Feature Flag Coverage Auditing (Synthetic Offline Evaluation)",
+  "dataset_version": "1.0.0",
+  "total_cases": 12,
+  "passed_cases": 12,
+  "accuracy": 1.0,
+  "route_discovery_recall": 1.0,
+  "bypass_precision": 1.0,
+  "bypass_recall": 1.0,
+  "false_protected_count": 0,
+  "caveat": "Synthetic offline evaluation; does not constitute live production security proof.",
+  "cases": [
+    {
+      "case_id": "cov_01_guarded_batch_read",
+      "passed": true,
+      "expected_status": "protected",
+      "actual_status": "protected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_02_early_return_guard",
+      "passed": true,
+      "expected_status": "protected",
+      "actual_status": "protected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_03_alternate_bypass",
+      "passed": true,
+      "expected_status": "partially_protected",
+      "actual_status": "partially_protected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_04_legacy_export_unprotected",
+      "passed": true,
+      "expected_status": "unprotected",
+      "actual_status": "unprotected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_05_logging_only",
+      "passed": true,
+      "expected_status": "unprotected",
+      "actual_status": "unprotected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_06_guard_after_sink",
+      "passed": true,
+      "expected_status": "unprotected",
+      "actual_status": "unprotected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_07_wrong_flag",
+      "passed": true,
+      "expected_status": "unprotected",
+      "actual_status": "unprotected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_08_or_bypass",
+      "passed": true,
+      "expected_status": "unprotected",
+      "actual_status": "unprotected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_09_dynamic_route",
+      "passed": true,
+      "expected_status": "unknown",
+      "actual_status": "unknown",
+      "expected_applicability": "unknown",
+      "actual_applicability": "unknown"
+    },
+    {
+      "case_id": "cov_10_exempt_health",
+      "passed": true,
+      "expected_status": "unknown",
+      "actual_status": "unknown",
+      "expected_applicability": "exempt",
+      "actual_applicability": "exempt"
+    },
+    {
+      "case_id": "cov_11_guarded_files_v2_v1",
+      "passed": true,
+      "expected_status": "protected",
+      "actual_status": "protected",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    },
+    {
+      "case_id": "cov_12_incomplete_snapshot",
+      "passed": true,
+      "expected_status": "unknown",
+      "actual_status": "unknown",
+      "expected_applicability": "applicable",
+      "actual_applicability": "applicable"
+    }
+  ]
+}

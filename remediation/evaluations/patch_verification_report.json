@@ -1,0 +1,195 @@
+{
+  "total_cases": 15,
+  "passed_cases": 15,
+  "unsafe_false_pass_count": 0,
+  "all_passed": true,
+  "cases": [
+    {
+      "case_id": "pv_01_full_pass",
+      "passed": true,
+      "expected_accepted": true,
+      "actual_accepted": true,
+      "expected_status": "test_passed",
+      "actual_status": "test_passed",
+      "expected_reason": "VERIFIED_READY_FOR_DEPLOYMENT",
+      "actual_reasons": [
+        "VERIFIED_READY_FOR_DEPLOYMENT"
+      ]
+    },
+    {
+      "case_id": "pv_02_security_fail",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "SECURITY_REGRESSION_FAILED",
+      "actual_reasons": [
+        "SECURITY_REGRESSION_FAILED"
+      ]
+    },
+    {
+      "case_id": "pv_03_functional_fail",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "FUNCTIONAL_REGRESSION_FAILED",
+      "actual_reasons": [
+        "FUNCTIONAL_REGRESSION_FAILED"
+      ]
+    },
+    {
+      "case_id": "pv_04_smoke_fail",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "SMOKE_TEST_FAILED",
+      "actual_reasons": [
+        "SMOKE_TEST_FAILED"
+      ]
+    },
+    {
+      "case_id": "pv_05_missing_smoke_plan",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "not_run",
+      "actual_status": "not_run",
+      "expected_reason": "MISSING_SMOKE_TESTS",
+      "actual_reasons": [
+        "MISSING_SMOKE_TESTS"
+      ]
+    },
+    {
+      "case_id": "pv_06_runner_omits_test",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "MISSING_SMOKE_TESTS",
+      "actual_reasons": [
+        "MISSING_SMOKE_TESTS"
+      ]
+    },
+    {
+      "case_id": "pv_07_base_revision_mismatch",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "BASE_REVISION_MISMATCH",
+      "actual_reasons": [
+        "BASE_REVISION_MISMATCH"
+      ]
+    },
+    {
+      "case_id": "pv_08_patched_revision_mismatch",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "PATCHED_REVISION_MISMATCH",
+      "actual_reasons": [
+        "PATCHED_REVISION_MISMATCH",
+        "RUNTIME_REVISION_MISMATCH"
+      ]
+    },
+    {
+      "case_id": "pv_09_runtime_revision_mismatch",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "RUNTIME_REVISION_MISMATCH",
+      "actual_reasons": [
+        "RUNTIME_REVISION_MISMATCH"
+      ]
+    },
+    {
+      "case_id": "pv_10_runtime_revision_missing",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "test_failed",
+      "actual_status": "test_failed",
+      "expected_reason": "RUNTIME_REVISION_MISSING",
+      "actual_reasons": [
+        "RUNTIME_REVISION_MISSING"
+      ]
+    },
+    {
+      "case_id": "pv_11_candidate_hash_mismatch",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "not_run",
+      "actual_status": "not_run",
+      "expected_reason": "CANDIDATE_HASH_MISMATCH",
+      "actual_reasons": [
+        "CANDIDATE_HASH_MISMATCH"
+      ]
+    },
+    {
+      "case_id": "pv_12_unsupported_target",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "not_run",
+      "actual_status": "not_run",
+      "expected_reason": "UNSUPPORTED_SOURCE_TARGET",
+      "actual_reasons": [
+        "UNSUPPORTED_SOURCE_TARGET"
+      ]
+    },
+    {
+      "case_id": "pv_13_timeout_outcome_unknown",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "infrastructure_error",
+      "actual_status": "infrastructure_error",
+      "expected_reason": "RUNNER_INFRASTRUCTURE_ERROR",
+      "actual_reasons": [
+        "MISSING_SECURITY_TESTS",
+        "MISSING_FUNCTIONAL_TESTS",
+        "MISSING_SMOKE_TESTS",
+        "RUNTIME_REVISION_MISSING",
+        "INSUFFICIENT_ISOLATION",
+        "RUNNER_INFRASTRUCTURE_ERROR",
+        "PARTIAL_RESULTS_REJECTED"
+      ]
+    },
+    {
+      "case_id": "pv_14_insufficient_isolation",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "infrastructure_error",
+      "actual_status": "infrastructure_error",
+      "expected_reason": "INSUFFICIENT_ISOLATION",
+      "actual_reasons": [
+        "INSUFFICIENT_ISOLATION"
+      ]
+    },
+    {
+      "case_id": "pv_15_artifact_corrupted",
+      "passed": true,
+      "expected_accepted": false,
+      "actual_accepted": false,
+      "expected_status": "infrastructure_error",
+      "actual_status": "infrastructure_error",
+      "expected_reason": "EVIDENCE_PROVENANCE_UNTRUSTED",
+      "actual_reasons": [
+        "EVIDENCE_PROVENANCE_UNTRUSTED"
+      ]
+    }
+  ]
+}

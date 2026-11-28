@@ -1,0 +1,61 @@
+{
+  "dataset_version": "1.0.0",
+  "description": "Deterministic labeled evaluation cases for Phase 07 AI Patch Engineer.",
+  "cases": [
+    {
+      "case_id": "patch_01_standin_sqli_fallback",
+      "target_id": "stand_in",
+      "category": "sql_injection",
+      "route": "/search",
+      "component": "search_v1",
+      "finding_status": "reproduced",
+      "revision_match": true,
+      "expected_accepted": true,
+      "expected_sandbox_ready": true
+    },
+    {
+      "case_id": "patch_02_standin_traversal_fallback",
+      "target_id": "stand_in",
+      "category": "path_traversal",
+      "route": "/files",
+      "component": "files_v1",
+      "finding_status": "reproduced",
+      "revision_match": true,
+      "expected_accepted": true,
+      "expected_sandbox_ready": true
+    },
+    {
+      "case_id": "patch_03_suspected_cve_rejected",
+      "target_id": "stand_in",
+      "category": "dependency_cve",
+      "route": null,
+      "component": "sqlite3",
+      "finding_status": "suspected",
+      "revision_match": true,
+      "expected_accepted": false,
+      "expected_sandbox_ready": false
+    },
+    {
+      "case_id": "patch_04_stale_revision_rejected",
+      "target_id": "stand_in",
+      "category": "sql_injection",
+      "route": "/search",
+      "component": "search_v1",
+      "finding_status": "reproduced",
+      "revision_match": false,
+      "expected_accepted": false,
+      "expected_sandbox_ready": false
+    },
+    {
+      "case_id": "patch_05_platform_target_not_sandbox_ready",
+      "target_id": "platform_demo_app",
+      "category": "sql_injection",
+      "route": "/demo/search-v1",
+      "component": "search_documents",
+      "finding_status": "reproduced",
+      "revision_match": true,
+      "expected_accepted": true,
+      "expected_sandbox_ready": false
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "registry_version": "1.0.0",
+  "prompts": [
+    {
+      "prompt_id": "investigator_v1",
+      "task_type": "investigation",
+      "version": "1.0.0",
+      "description": "Primary evidence-grounded Security Investigator system + task prompt with strict untrusted data framing.",
+      "system_file": "investigator/system.md",
+      "task_file": "investigator/investigation.md",
+      "repair_file": "investigator/repair_output.md",
+      "examples_file": "investigator/examples.json",
+      "input_requirements": [
+        "finding",
+        "incident_id",
+        "evidence_references",
+        "verification_summary"
+      ],
+      "expected_response_schema": "RawInvestigationOutput",
+      "supported_capabilities": [
+        "structured_json",
+        "native_schema"
+      ],
+      "created_at": "2026-11-26T00:00:00Z",
+      "revision_notes": "Initial Phase 03 prompt release with SQLi, Path Traversal, Dependency CVE, and Other guidance.",
+      "evaluation_case_ids": [
+        "eval_sqli_repro_01",
+        "eval_pt_repro_02",
+        "eval_sqli_susp_03",
+        "eval_cve_susp_09",
+        "eval_inj_src_17"
+      ]
+    },
+    {
+      "prompt_id": "candidate_patch_placeholder_v1",
+      "task_type": "candidate_patch_generation",
+      "version": "1.0.0-placeholder",
+      "description": "Deferred Prompt 07+ placeholder metadata proving PromptRegistry multi-task extensibility.",
+      "system_file": "investigator/system.md",
+      "task_file": "investigator/investigation.md",
+      "repair_file": "investigator/repair_output.md",
+      "examples_file": null,
+      "input_requirements": [
+        "finding",
+        "containment_verification"
+      ],
+      "expected_response_schema": "PatchProposal",
+      "supported_capabilities": [
+        "structured_json"
+      ],
+      "created_at": "2026-11-26T00:00:00Z",
+      "revision_notes": "Interface reservation for future Engineer 2 implementation; not invoked for live patching in Phase 03.",
+      "evaluation_case_ids": []
+    }
+  ]
+}

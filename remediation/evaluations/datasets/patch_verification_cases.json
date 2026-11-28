@@ -1,0 +1,158 @@
+{
+  "_meta": {
+    "description": "Deterministic Phase 08 isolated patch verification evaluation dataset",
+    "provenance": "reference_fixture"
+  },
+  "cases": [
+    {
+      "case_id": "pv_01_full_pass",
+      "scenario": "pass",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": true,
+      "expected_status": "test_passed",
+      "expected_reason": "VERIFIED_READY_FOR_DEPLOYMENT"
+    },
+    {
+      "case_id": "pv_02_security_fail",
+      "scenario": "security_fail",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "SECURITY_REGRESSION_FAILED"
+    },
+    {
+      "case_id": "pv_03_functional_fail",
+      "scenario": "functional_fail",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "FUNCTIONAL_REGRESSION_FAILED"
+    },
+    {
+      "case_id": "pv_04_smoke_fail",
+      "scenario": "smoke_fail",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "SMOKE_TEST_FAILED"
+    },
+    {
+      "case_id": "pv_05_missing_smoke_plan",
+      "scenario": "pass",
+      "source_target": "stand_in",
+      "missing_smoke": true,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "not_run",
+      "expected_reason": "MISSING_SMOKE_TESTS"
+    },
+    {
+      "case_id": "pv_06_runner_omits_test",
+      "scenario": "missing_tests",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "MISSING_SMOKE_TESTS"
+    },
+    {
+      "case_id": "pv_07_base_revision_mismatch",
+      "scenario": "base_revision_mismatch",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "BASE_REVISION_MISMATCH"
+    },
+    {
+      "case_id": "pv_08_patched_revision_mismatch",
+      "scenario": "patched_revision_mismatch",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "PATCHED_REVISION_MISMATCH"
+    },
+    {
+      "case_id": "pv_09_runtime_revision_mismatch",
+      "scenario": "runtime_revision_mismatch",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "RUNTIME_REVISION_MISMATCH"
+    },
+    {
+      "case_id": "pv_10_runtime_revision_missing",
+      "scenario": "runtime_revision_missing",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "test_failed",
+      "expected_reason": "RUNTIME_REVISION_MISSING"
+    },
+    {
+      "case_id": "pv_11_candidate_hash_mismatch",
+      "scenario": "pass",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": true,
+      "expected_accepted": false,
+      "expected_status": "not_run",
+      "expected_reason": "CANDIDATE_HASH_MISMATCH"
+    },
+    {
+      "case_id": "pv_12_unsupported_target",
+      "scenario": "pass",
+      "source_target": "platform_demo_app",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "not_run",
+      "expected_reason": "UNSUPPORTED_SOURCE_TARGET"
+    },
+    {
+      "case_id": "pv_13_timeout_outcome_unknown",
+      "scenario": "timeout_outcome_unknown",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "infrastructure_error",
+      "expected_reason": "RUNNER_INFRASTRUCTURE_ERROR"
+    },
+    {
+      "case_id": "pv_14_insufficient_isolation",
+      "scenario": "insufficient_isolation",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "infrastructure_error",
+      "expected_reason": "INSUFFICIENT_ISOLATION"
+    },
+    {
+      "case_id": "pv_15_artifact_corrupted",
+      "scenario": "artifact_corrupted",
+      "source_target": "stand_in",
+      "missing_smoke": false,
+      "tamper_hash": false,
+      "expected_accepted": false,
+      "expected_status": "infrastructure_error",
+      "expected_reason": "EVIDENCE_PROVENANCE_UNTRUSTED"
+    }
+  ]
+}

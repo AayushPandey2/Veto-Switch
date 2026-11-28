@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "description": "Independently labeled synthetic evaluation dataset for Phase 10 Rollback Intelligence.",
+    "provenance": "reference_fixture",
+    "version": "1.0.0"
+  },
+  "cases": [
+    {"case_id": "rb_01", "scenario": "Healthy 5% checkpoint, operational failure at 25%", "expected": "restore_verified_targeting"},
+    {"case_id": "rb_02", "scenario": "Confirmed security regression at 25%", "expected": "full_containment_no_partial"},
+    {"case_id": "rb_03", "scenario": "No prior verified-safe state", "expected": "manual_review"},
+    {"case_id": "rb_04", "scenario": "Previous stage was never verified", "expected": "reject_safe_checkpoint"},
+    {"case_id": "rb_05", "scenario": "Prior checkpoint belongs to another environment", "expected": "reject_safe_checkpoint"},
+    {"case_id": "rb_06", "scenario": "Deployment revision changed", "expected": "reject_safe_checkpoint"},
+    {"case_id": "rb_07", "scenario": "Relevant coverage gap discovered", "expected": "reject_unsafe_strategy"},
+    {"case_id": "rb_08", "scenario": "Replacement disable would expose vulnerable legacy", "expected": "reject_unsafe_strategy"},
+    {"case_id": "rb_09", "scenario": "Safe fallback unknown", "expected": "manual_review"},
+    {"case_id": "rb_10", "scenario": "Executor lacks targeting support", "expected": "unsupported_targeting"},
+    {"case_id": "rb_11", "scenario": "Approval missing", "expected": "reject_approval"},
+    {"case_id": "rb_12", "scenario": "Approval expired", "expected": "reject_approval"},
+    {"case_id": "rb_13", "scenario": "Approved configuration altered", "expected": "reject_approval"},
+    {"case_id": "rb_14", "scenario": "Reused approval", "expected": "reject_approval"},
+    {"case_id": "rb_15", "scenario": "Current state drifted", "expected": "reject_drift"},
+    {"case_id": "rb_16", "scenario": "Receipt references wrong proposal", "expected": "reject_receipt"},
+    {"case_id": "rb_17", "scenario": "Receipt succeeded but readback differs", "expected": "readback_mismatch"},
+    {"case_id": "rb_18", "scenario": "Security verification missing", "expected": "verification_incomplete"},
+    {"case_id": "rb_19", "scenario": "Security regression fails after rollback", "expected": "verification_failed"},
+    {"case_id": "rb_20", "scenario": "Unrelated functionality fails", "expected": "verification_failed"},
+    {"case_id": "rb_21", "scenario": "Duplicate receipt", "expected": "idempotent_duplicate"},
+    {"case_id": "rb_22", "scenario": "Ambiguous execution timeout", "expected": "outcome_unknown"},
+    {"case_id": "rb_23", "scenario": "Full verified containment restored", "expected": "contained"},
+    {"case_id": "rb_24", "scenario": "Earlier exposure restored", "expected": "rollout_paused"}
+  ]
+}

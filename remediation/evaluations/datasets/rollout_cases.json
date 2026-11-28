@@ -1,0 +1,33 @@
+{
+  "_meta": {
+    "description": "Independently labeled synthetic evaluation dataset for Phase 09 Progressive Rollout Intelligence.",
+    "provenance": "reference_fixture",
+    "version": "1.0.0"
+  },
+  "cases": [
+    {"case_id": "ro_01", "scenario": "Candidate untested", "expected": "ineligible"},
+    {"case_id": "ro_02", "scenario": "Candidate tested but undeployed", "expected": "ineligible"},
+    {"case_id": "ro_03", "scenario": "Deployed artifact revision mismatch", "expected": "ineligible"},
+    {"case_id": "ro_04", "scenario": "Replacement not addressable", "expected": "ineligible"},
+    {"case_id": "ro_05", "scenario": "Feature missing", "expected": "ineligible"},
+    {"case_id": "ro_06", "scenario": "Targeting unavailable", "expected": "draft_plan_only"},
+    {"case_id": "ro_07", "scenario": "Healthy complete 5% stage", "expected": "advance_to_25"},
+    {"case_id": "ro_08", "scenario": "Healthy complete 25% stage", "expected": "advance_to_50"},
+    {"case_id": "ro_09", "scenario": "Healthy complete 50% stage", "expected": "advance_to_100"},
+    {"case_id": "ro_10", "scenario": "Healthy complete 100% stage", "expected": "final_recovery_ready"},
+    {"case_id": "ro_11", "scenario": "Zero requests", "expected": "hold"},
+    {"case_id": "ro_12", "scenario": "Missing baseline", "expected": "hold"},
+    {"case_id": "ro_13", "scenario": "Stale observation", "expected": "hold"},
+    {"case_id": "ro_14", "scenario": "Insufficient observation time", "expected": "hold"},
+    {"case_id": "ro_15", "scenario": "Unknown security result", "expected": "hold"},
+    {"case_id": "ro_16", "scenario": "Confirmed security failure", "expected": "rollback_proposed"},
+    {"case_id": "ro_17", "scenario": "Credible error-rate breach", "expected": "rollback_proposed"},
+    {"case_id": "ro_18", "scenario": "Credible latency breach", "expected": "rollback_proposed"},
+    {"case_id": "ro_19", "scenario": "Incorrect observed exposure", "expected": "hold"},
+    {"case_id": "ro_20", "scenario": "Synthetic telemetry in live context", "expected": "hold"},
+    {"case_id": "ro_21", "scenario": "Reused approval", "expected": "reject_approval"},
+    {"case_id": "ro_22", "scenario": "Altered approved targeting configuration", "expected": "reject_approval"},
+    {"case_id": "ro_23", "scenario": "Wrong deployment revision", "expected": "hold_or_reject"},
+    {"case_id": "ro_24", "scenario": "Final stage missing evidence", "expected": "not_recovered"}
+  ]
+}

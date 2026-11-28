@@ -1,0 +1,180 @@
+{
+  "_meta": {
+    "description": "Incident timeline, artifact metadata, and evidence completeness fixtures.",
+    "provenance": "reference_fixture"
+  },
+  "valid": {
+    "complete_synthetic_timeline": [
+      {
+        "event_id": "evt_00000000000000000000000000000001",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "event_type": "finding_received",
+        "actor": "killswitch_demo_verifier",
+        "actor_type": "security_scanner",
+        "timestamp_utc": "2026-11-26T00:00:00Z",
+        "correlation_id": "corr_00000000000000000000000000000001",
+        "causation_id": null,
+        "sequence_number": 1,
+        "schema_version": "1.0.0",
+        "payload_model_version": "1.0.0",
+        "evidence_ids": ["art_00000000000000000000000000000001"],
+        "idempotency_token": "idem_00000000000000000000000000000001",
+        "payload": {
+          "finding_id": "fnd_00000000000000000000000000000001",
+          "category": "sql_injection",
+          "severity": "critical",
+          "status": "reproduced"
+        }
+      },
+      {
+        "event_id": "evt_00000000000000000000000000000002",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "event_type": "containment_proposed",
+        "actor": "agent_core_policy",
+        "actor_type": "deterministic_engine",
+        "timestamp_utc": "2026-11-26T00:10:00Z",
+        "correlation_id": "corr_00000000000000000000000000000001",
+        "causation_id": "evt_00000000000000000000000000000001",
+        "sequence_number": 2,
+        "schema_version": "1.0.0",
+        "payload_model_version": "1.0.0",
+        "evidence_ids": ["art_00000000000000000000000000000001"],
+        "idempotency_token": "idem_00000000000000000000000000000002",
+        "payload": {
+          "proposal_id": "prop_00000000000000000000000000000101",
+          "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+          "environment": "demo-staging",
+          "flag_name": "search_v1",
+          "desired_enabled": false
+        }
+      },
+      {
+        "event_id": "evt_00000000000000000000000000000003",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "event_type": "approval_recorded",
+        "actor": "secops_lead_demo",
+        "actor_type": "human_operator",
+        "timestamp_utc": "2026-11-26T00:11:00Z",
+        "correlation_id": "corr_00000000000000000000000000000001",
+        "causation_id": "evt_00000000000000000000000000000002",
+        "sequence_number": 3,
+        "schema_version": "1.0.0",
+        "payload_model_version": "1.0.0",
+        "evidence_ids": [],
+        "idempotency_token": "idem_00000000000000000000000000000003",
+        "payload": {
+          "approval_id": "appr_00000000000000000000000000000101",
+          "proposal_id": "prop_00000000000000000000000000000101",
+          "proposal_hash": "eb666895380e2c0ae914b522525d13f46bedc3d95cbe6b3d0058a1deb4ecb1a0",
+          "decision": "approved"
+        }
+      },
+      {
+        "event_id": "evt_00000000000000000000000000000004",
+        "incident_id": "inc_00000000000000000000000000000001",
+        "event_type": "containment_verified",
+        "actor": "killswitch_demo_verifier",
+        "actor_type": "security_verifier",
+        "timestamp_utc": "2026-11-26T00:13:04Z",
+        "correlation_id": "corr_00000000000000000000000000000001",
+        "causation_id": "evt_00000000000000000000000000000003",
+        "sequence_number": 4,
+        "schema_version": "1.0.0",
+        "payload_model_version": "1.0.0",
+        "evidence_ids": ["art_00000000000000000000000000000005"],
+        "idempotency_token": "idem_00000000000000000000000000000004",
+        "payload": {
+          "verification_id": "ver_00000000000000000000000000000102",
+          "phase": "after_containment",
+          "execution_status": "test_passed",
+          "passed": true
+        }
+      }
+    ],
+    "incomplete_timeline_report": {
+      "report_id": "rep_00000000000000000000000000000101",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "incident_status": "CONTAINED",
+      "timeline": [],
+      "findings": [],
+      "investigation_summaries": [],
+      "containment_decisions": [],
+      "human_approvals": [],
+      "operation_receipts": [],
+      "verification_outcomes": [],
+      "patch_proposals": [],
+      "patch_test_results": [],
+      "deployment_evidence": [],
+      "rollout_plans": [],
+      "rollout_decisions": [],
+      "rollback_history": [],
+      "coverage_findings": [],
+      "artifact_references": [],
+      "missing_evidence": ["post_patch_deployment_manifest"],
+      "limitations": ["Synthetic reference report; remediation still pending."],
+      "completeness": "partial",
+      "generated_at": "2026-11-26T00:14:00Z"
+    },
+    "redacted_artifact_metadata": {
+      "artifact_id": "art_00000000000000000000000000000001",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "artifact_type": "reproduction_log",
+      "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "hash_algorithm": "sha256",
+      "storage_ref": "artifacts/inc_00000000000000000000000000000001/reproduction.json",
+      "created_at": "2026-11-26T00:01:05Z",
+      "producer": "killswitch_demo_verifier",
+      "provenance": "reference_fixture",
+      "content_type": "application/json",
+      "size_bytes": 512,
+      "source_revision": "rev_abc123def456",
+      "redaction_status": "redacted"
+    }
+  },
+  "invalid": {
+    "invalid_artifact_hash": {
+      "artifact_id": "art_00000000000000000000000000000099",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "artifact_type": "reproduction_log",
+      "content_hash": "not-a-valid-sha256",
+      "hash_algorithm": "sha256",
+      "storage_ref": "artifacts/bad.json",
+      "created_at": "2026-11-26T00:01:05Z",
+      "producer": "killswitch_demo_verifier",
+      "provenance": "reference_fixture",
+      "content_type": "application/json",
+      "size_bytes": 100,
+      "source_revision": "rev_abc123def456",
+      "redaction_status": "redacted"
+    },
+    "complete_report_with_missing_evidence": {
+      "report_id": "rep_00000000000000000000000000000199",
+      "incident_id": "inc_00000000000000000000000000000001",
+      "incident_status": "CONTAINED",
+      "timeline": [],
+      "findings": [],
+      "investigation_summaries": [],
+      "containment_decisions": [],
+      "human_approvals": [],
+      "operation_receipts": [],
+      "verification_outcomes": [],
+      "patch_proposals": [],
+      "patch_test_results": [],
+      "deployment_evidence": [],
+      "rollout_plans": [],
+      "rollout_decisions": [],
+      "rollback_history": [],
+      "coverage_findings": [],
+      "artifact_references": [],
+      "missing_evidence": ["operation_receipt"],
+      "limitations": [],
+      "completeness": "complete",
+      "generated_at": "2026-11-26T00:14:00Z"
+    }
+  },
+  "negative_cross_checks": {
+    "missing_evidence_reference_ids": [
+      "art_missing_000000000000000000000001"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "policy_version": "1.0.0",
+  "is_demo_default": true,
+  "require_fresh_human_approval": true,
+  "require_post_rollback_verification": true,
+  "require_readback_reconciliation": true,
+  "forbid_vulnerable_legacy_reactivation": true,
+  "allow_partial_exposure_on_security_regression": false,
+  "safe_state_max_age_seconds": 86400,
+  "proposal_expiration_seconds": 900,
+  "post_rollback_hold_seconds": 300,
+  "cooldown_suppresses_security_failure": false,
+  "known_vulnerable_implementations": ["search_v1"],
+  "precedence_order": [
+    "prevent_known_vulnerable_exposure",
+    "preserve_or_restore_security_containment",
+    "require_compatible_current_state_and_deployment",
+    "reject_unsupported_actions",
+    "prefer_verified_safe_configuration",
+    "minimize_operational_disruption",
+    "preserve_uncertainty",
+    "require_human_review_when_incomplete"
+  ]
+}

@@ -1,0 +1,15 @@
+--- a/app.py
++++ b/app.py
+@@ -115,10 +115,8 @@
+ 
+ 
+ def search_v1(q: str):
+-    # DELIBERATELY VULNERABLE (demo only): user input concatenated into SQL.
+-    sql = ("SELECT title, owner FROM documents WHERE is_private = 0 AND title LIKE '%"
+-           + q + "%' ORDER BY title")
+-    return db().execute(sql).fetchall()
++    # "Fixed" by refusing every query: blocks the exploit but breaks search.
++    return []
+ 
+ 
+ def search_v2(q: str):
